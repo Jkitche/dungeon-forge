@@ -1,0 +1,29 @@
+{
+  "name": "dungeon-forge",
+  "productName": "Dungeon Forge",
+  "version": "1.0.0",
+  "description": "Randomly generated D&D dungeon maps with export to Roll20, Foundry VTT, Universal VTT (.dd2vtt) and more.",
+  "main": "dist/main/main.js",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.ts"
+  },
+  "keywords": [
+    "dnd",
+    "dungeon",
+    "generator",
+    "roll20",
+    "foundry",
+    "vtt",
+    "electron"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "electron": "^45.0.0",
+    "typescript": "^7.0.2"
+  }
+}
