@@ -103,6 +103,10 @@ export class MyVttExporter implements ExportStrategy {
 
 Then add it to `EXPORTERS` in `src/renderer/export/index.ts`. Strategies never touch the DOM, dialogs or the file system. The app supplies the context, asks where to save, and writes the returned files. That keeps every format testable in Node with a fake `renderPng`, and the registry tests automatically cover a new strategy: files land next to the save location, summaries escape file names, and default file names don't collide.
 
+## Adding a prop
+
+Props follow the same pattern as exports. Add the kind and its placement rules to `PROP_SPECS` in `src/renderer/clutter.ts`, write a class implementing `PropRenderer` (`src/renderer/props/types.ts`), and add it to `PROP_RENDERERS` in `src/renderer/props/index.ts`. Leaving it out of the registry is a compile error. A renderer gets the canvas, the square size, a seeded random source and the theme's prop palette, so it works in every theme. The tests draw every renderer onto a recording fake canvas to check it stays inside its footprint, uses only palette colours and draws the same way every time.
+
 ## Layout
 
 ```
@@ -117,6 +121,11 @@ src/
     editor.ts           Hand-editing operations and the consistency pass (pure, no DOM)
     editor-ui.ts        Edit mode: tools, undo history and drawing previews
     clutter.ts          Room furniture: prop types, per-setting pools, room-name hints, placement
+    props/
+      types.ts          PropRenderer, PropPaintContext, PropPalette
+      index.ts          Registry: one renderer per prop kind
+      containers.ts, furniture.ts, debris.ts, fixtures.ts, tech.ts
+      draw.ts           Shared drawing helpers
     cells.ts            Cell types and grid directions shared across modules
     genres.ts           Settings: content tables, vocabulary, default theme and layout
     contents.ts         Room stocking (d6 monster / trap / special / empty)

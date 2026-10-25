@@ -5,6 +5,8 @@ import { generateDungeon, normalizeOptions, serializeDungeon, deserializeDungeon
 import type { Dungeon, DungeonOptions, Room } from '../src/renderer/generator.ts';
 import { canHaveDoor, canHaveWindow, toggleWindow, placeProp, removeProp, rotateProp, createBlankDungeon, cycleDoor, cycleStairs, edgeAt, eraseCells, lineCells, normalizeDungeon, paintCorridor, paintRoom, rectCells, restore, snapshot, stockNewRoom, togglePillar } from '../src/renderer/editor.ts';
 import { RNG } from '../src/renderer/rng.ts';
+import { PROP_RENDERERS } from '../src/renderer/props/index.ts';
+import type { PropBox, PropPalette } from '../src/renderer/props/index.ts';
 import { PROP_KINDS, PROP_SPECS, editorFree, fitProp, footprint, propAt, settingProps } from '../src/renderer/clutter.ts';
 import { computeWalls, computePillarOutlines } from '../src/renderer/walls.ts';
 import { GENRES, GENRE_KEYS } from '../src/renderer/genres.ts';
@@ -712,4 +714,89 @@ test('the Look follows the setting unless Blueprint or Dark Stone is chosen', ()
   }
   for (const [look] of LOOKS) assert.ok(isThemeKey(resolveTheme(look, 'parchment')));
   assert.ok(!isLook('parchment'), 'setting themes are not separate looks');
+});
+
+// ---------------------------------------------------------------------------
+// Prop renderers, drawn onto a fake canvas that records every call.
+
+interface Recording {
+  ctx: CanvasRenderingContext2D;
+  calls: { name: string; args: unknown[] }[];
+  styles: unknown[];
+}
+
+function recordingContext(): Recording {
+  const calls: Recording['calls'] = [];
+  const styles: unknown[] = [];
+  const state: Record<string, unknown> = {};
+  const ctx = new Proxy(state, {
+    get(_t, prop: string) {
+      if (prop in state) return state[prop];
+      if (prop === 'createRadialGradient') return () => ({ gradient: true, addColorStop: () => {} });
+      return (...args: unknown[]) => calls.push({ name: prop, args });
+    },
+    set(_t, prop: string, value: unknown) {
+      state[prop] = value;
+      if (prop === 'fillStyle' || prop === 'strokeStyle' || prop === 'shadowColor') styles.push(value);
+      return true;
+    },
+  });
+  return { ctx: ctx as unknown as CanvasRenderingContext2D, calls, styles };
+}
+
+/** Every point a recorded call touches, for bounds checks. */
+function touchedPoints(calls: Recording['calls']): [number, number][] {
+  const pts: [number, number][] = [];
+  for (const { name, args } of calls) {
+    const n = args as number[];
+    if (name === 'moveTo' || name === 'lineTo') pts.push([n[0] as number, n[1] as number]);
+    if (['rect', 'fillRect', 'strokeRect', 'roundRect'].includes(name)) {
+      pts.push([n[0] as number, n[1] as number], [(n[0] as number) + (n[2] as number), (n[1] as number) + (n[3] as number)]);
+    }
+    if (name === 'arc') {
+      const [x, y, r] = n as [number, number, number];
+      pts.push([x - r, y - r], [x + r, y + r]);
+    }
+  }
+  return pts;
+}
+
+const TEST_PALETTE: PropPalette = {
+  wood: '#a07040', metal: '#808890', cloth: '#803030', stone: '#909088', line: '#101010', glow: '#ffb040', paper: '#f0e8d0',
+};
+
+test('prop registry has one renderer per kind, under its own key', () => {
+  assert.deepEqual(Object.keys(PROP_RENDERERS).sort(), [...PROP_KINDS].sort());
+  for (const [kind, r] of Object.entries(PROP_RENDERERS)) assert.equal(r.kind, kind);
+});
+
+test('each prop draws inside its footprint, in palette colours, the same way every time', () => {
+  const ppg = 50;
+  for (const kind of PROP_KINDS) {
+    for (const vertical of [false, true]) {
+      const long = PROP_SPECS[kind].long;
+      // Away from the origin, so a renderer that ignores the box position is caught.
+      const box: PropBox = { x: 700, y: 400, w: (long && !vertical ? 2 : 1) * ppg, h: (long && vertical ? 2 : 1) * ppg, vertical };
+      const draw = (): Recording => {
+        const rec = recordingContext();
+        PROP_RENDERERS[kind].draw({ ctx: rec.ctx, ppg, palette: TEST_PALETTE, rng: new RNG(`prop:${kind}`) }, box);
+        return rec;
+      };
+      const rec = draw();
+      const label = `${kind}${vertical ? ' (vertical)' : ''}`;
+      assert.ok(rec.calls.length > 0, `${label} draws something`);
+
+      // Glows may spill a square past the footprint; nothing else should.
+      for (const [x, y] of touchedPoints(rec.calls)) {
+        assert.ok(x >= box.x - ppg && x <= box.x + box.w + ppg && y >= box.y - ppg && y <= box.y + box.h + ppg, `${label} draws at (${x}, ${y})`);
+      }
+      const pts = touchedPoints(rec.calls.filter((c) => c.name !== 'fillRect'));
+      assert.ok(pts.every(([x, y]) => x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h), `${label} shapes stay in the footprint`);
+
+      const colours = new Set(Object.values(TEST_PALETTE));
+      for (const s of rec.styles) assert.ok(typeof s !== 'string' || colours.has(s), `${label} uses a colour outside the palette: ${String(s)}`);
+
+      assert.deepEqual(draw().calls, rec.calls, `${label} is deterministic`);
+    }
+  }
 });

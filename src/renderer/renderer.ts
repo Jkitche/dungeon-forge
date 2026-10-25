@@ -9,7 +9,9 @@ import { isFloor, isOpen, ROCK, ROOM, CORRIDOR, PILLAR, DIRS } from './generator
 import type { Dungeon, Door } from './generator.ts';
 import { computeWalls, PILLAR_RADIUS } from './walls.ts';
 import { PROP_SPECS } from './clutter.ts';
-import type { Prop, PropKind } from './clutter.ts';
+import { PROP_RENDERERS } from './props/index.ts';
+import type { PropPaintContext, PropPalette } from './props/index.ts';
+import { blob } from './props/draw.ts';
 
 type RGB = readonly [number, number, number];
 
@@ -19,19 +21,6 @@ export type DoorStyle = 'outline' | 'wood' | 'sliding' | 'hatch' | 'metal';
 export type StairStyle = 'steps' | 'lift' | 'ladder';
 export type PillarStyle = 'round' | 'square' | 'boiler';
 export type DecorStyle = 'gears' | 'pipes' | 'rivets' | 'hazard' | 'candles' | 'stains' | 'debris';
-
-/** Colours for room clutter. Light themes use pale fills with dark outlines, like a hand-drawn map. */
-export interface PropPalette {
-  wood: string;
-  metal: string;
-  cloth: string;
-  stone: string;
-  line: string;
-  /** Fire, screens and other light sources. */
-  glow: string;
-  /** Pillows, pages, bone. */
-  paper: string;
-}
 
 export interface Theme {
   label: string;
@@ -329,20 +318,6 @@ function hash2(a: number, b: number): number {
   return (h ^ (h >>> 13)) >>> 0;
 }
 
-function irregularBlob(p: Paint, cx: number, cy: number, r: number, points: number): void {
-  const { ctx, ppg, rng } = p;
-  ctx.beginPath();
-  for (let i = 0; i < points; i++) {
-    const a = (i / points) * Math.PI * 2;
-    const rr = r * (0.6 + rng.float() * 0.5);
-    const x = (cx + Math.cos(a) * rr) * ppg;
-    const y = (cy + Math.sin(a) * rr) * ppg;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.closePath();
-  ctx.fill();
-}
 
 // ---------------------------------------------------------------------------
 // Rock (everything outside the dungeon)
@@ -435,7 +410,7 @@ const ROCK_PAINTERS: Record<RockStyle, (p: Paint) => void> = {
     eachRockNearFloor(p.d, 2, (x, y) => {
       for (let k = 0; k < 4; k++) {
         ctx.fillStyle = rng.pick(shades);
-        irregularBlob(p, x + rng.float(), y + rng.float(), 0.08 + rng.float() * 0.14, 6);
+        blob(p, x + rng.float(), y + rng.float(), 0.08 + rng.float() * 0.14, 6);
       }
       if (rng.chance(0.15)) {
         ctx.strokeStyle = p.theme.rockLine ?? '#000';
@@ -1177,8 +1152,8 @@ const DECOR: Record<DecorStyle, { phase: DecorPhase; paint: (p: Paint) => void }
       eachOpenCell(d, (x, y) => {
         if (!rng.chance(0.03)) return;
         ctx.fillStyle = 'rgba(110, 10, 18, 0.45)';
-        irregularBlob(p, x + 0.5, y + 0.5, 0.3 + rng.float() * 0.2, 9);
-        for (let i = 0; i < 3; i++) irregularBlob(p, x + rng.float(), y + rng.float(), 0.06, 6);
+        blob(p, x + 0.5, y + 0.5, 0.3 + rng.float() * 0.2, 9);
+        for (let i = 0; i < 3; i++) blob(p, x + rng.float(), y + rng.float(), 0.06, 6);
       });
     },
   },
@@ -1194,7 +1169,7 @@ const DECOR: Record<DecorStyle, { phase: DecorPhase; paint: (p: Paint) => void }
         if (stairs.has(y * d.width + x) || !rng.chance(0.05)) return;
         for (let i = 0; i < 5; i++) {
           ctx.fillStyle = rng.pick(colors);
-          irregularBlob(p, x + 0.2 + rng.float() * 0.6, y + 0.2 + rng.float() * 0.6, 0.05 + rng.float() * 0.08, 5);
+          blob(p, x + 0.2 + rng.float() * 0.6, y + 0.2 + rng.float() * 0.6, 0.05 + rng.float() * 0.08, 5);
         }
       });
     },
@@ -1202,288 +1177,18 @@ const DECOR: Record<DecorStyle, { phase: DecorPhase; paint: (p: Paint) => void }
 };
 
 // ---------------------------------------------------------------------------
-// Clutter
-
-/** A prop's footprint in pixels, plus its orientation. */
-interface PropBox {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  vertical: boolean;
-}
-
-type PropPainter = (p: Paint, b: PropBox, prop: Prop) => void;
-
-function outlined(ctx: Ctx, pal: PropPalette, ppg: number, fill: string, draw: () => void): void {
-  ctx.fillStyle = fill;
-  ctx.strokeStyle = pal.line;
-  ctx.lineWidth = Math.max(1, ppg * 0.035);
-  ctx.beginPath();
-  draw();
-  ctx.fill();
-  ctx.stroke();
-}
-
-function roundRect(ctx: Ctx, x: number, y: number, w: number, h: number, r: number): void {
-  ctx.roundRect(x, y, w, h, r);
-}
-
-/** Inset a box by fractions of a square on each axis. */
-const inset = (b: PropBox, ppg: number, ix: number, iy = ix): PropBox => ({
-  ...b, x: b.x + ppg * ix, y: b.y + ppg * iy, w: b.w - ppg * ix * 2, h: b.h - ppg * iy * 2,
-});
-
-/** '#rrggbb' to 'rgba(r, g, b, a)'. */
-function withAlpha(hex: string, a: number): string {
-  const n = parseInt(hex.slice(1, 7), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
-}
-
-function glowCircle(ctx: Ctx, color: string, x: number, y: number, r: number): void {
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-  // Fade to the same colour, fully transparent; fading to transparent black looks muddy.
-  g.addColorStop(0, withAlpha(color, 0.55));
-  g.addColorStop(1, withAlpha(color, 0));
-  ctx.fillStyle = g;
-  ctx.fillRect(x - r, y - r, r * 2, r * 2);
-}
-
-const PROP_PAINTERS: Record<PropKind, PropPainter> = {
-  crate: ({ ctx, ppg, theme }, box) => {
-    const b = inset(box, ppg, 0.14);
-    outlined(ctx, theme.props, ppg, theme.props.wood, () => ctx.rect(b.x, b.y, b.w, b.h));
-    ctx.beginPath();
-    ctx.moveTo(b.x, b.y);
-    ctx.lineTo(b.x + b.w, b.y + b.h);
-    ctx.moveTo(b.x + b.w, b.y);
-    ctx.lineTo(b.x, b.y + b.h);
-    ctx.stroke();
-  },
-
-  barrel: ({ ctx, ppg, theme }, b) => {
-    const cx = b.x + b.w / 2;
-    const cy = b.y + b.h / 2;
-    outlined(ctx, theme.props, ppg, theme.props.wood, () => ctx.arc(cx, cy, ppg * 0.34, 0, Math.PI * 2));
-    ctx.strokeStyle = theme.props.metal;
-    ctx.beginPath();
-    ctx.arc(cx, cy, ppg * 0.22, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = theme.props.line;
-    ctx.beginPath();
-    ctx.arc(cx, cy, ppg * 0.08, 0, Math.PI * 2);
-    ctx.stroke();
-  },
-
-  chest: ({ ctx, ppg, theme }, box) => {
-    const b = inset(box, ppg, 0.16, 0.26);
-    outlined(ctx, theme.props, ppg, theme.props.wood, () => roundRect(ctx, b.x, b.y, b.w, b.h, ppg * 0.05));
-    ctx.fillStyle = theme.props.metal;
-    ctx.fillRect(b.x, b.y + b.h * 0.42, b.w, b.h * 0.16);
-    ctx.beginPath();
-    ctx.arc(b.x + b.w / 2, b.y + b.h / 2, ppg * 0.05, 0, Math.PI * 2);
-    ctx.fillStyle = theme.props.line;
-    ctx.fill();
-  },
-
-  table: ({ ctx, ppg, theme }, box) => {
-    const b = inset(box, ppg, 0.14);
-    outlined(ctx, theme.props, ppg, theme.props.wood, () => roundRect(ctx, b.x, b.y, b.w, b.h, ppg * 0.06));
-    // Something on the table: a candle, a plate.
-    ctx.fillStyle = theme.props.paper;
-    ctx.beginPath();
-    ctx.arc(b.x + b.w * 0.3, b.y + b.h * 0.5, ppg * 0.1, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = theme.props.glow;
-    ctx.beginPath();
-    ctx.arc(b.x + b.w * 0.72, b.y + b.h * 0.45, ppg * 0.05, 0, Math.PI * 2);
-    ctx.fill();
-  },
-
-  bed: ({ ctx, ppg, theme }, box) => {
-    const b = inset(box, ppg, 0.1);
-    outlined(ctx, theme.props, ppg, theme.props.cloth, () => roundRect(ctx, b.x, b.y, b.w, b.h, ppg * 0.06));
-    const pw = box.vertical ? b.w * 0.8 : ppg * 0.32;
-    const ph = box.vertical ? ppg * 0.32 : b.h * 0.8;
-    const px = box.vertical ? b.x + (b.w - pw) / 2 : b.x + ppg * 0.08;
-    const py = box.vertical ? b.y + ppg * 0.08 : b.y + (b.h - ph) / 2;
-    outlined(ctx, theme.props, ppg, theme.props.paper, () => roundRect(ctx, px, py, pw, ph, ppg * 0.06));
-  },
-
-  shelf: ({ ctx, ppg, theme, rng }, box) => {
-    const b = inset(box, ppg, box.vertical ? 0.3 : 0.08, box.vertical ? 0.08 : 0.3);
-    outlined(ctx, theme.props, ppg, theme.props.wood, () => ctx.rect(b.x, b.y, b.w, b.h));
-    // Books or boxes along the shelf.
-    const along = box.vertical ? b.h : b.w;
-    const n = 6;
-    for (let i = 0; i < n; i++) {
-      ctx.fillStyle = rng.pick([theme.props.cloth, theme.props.metal, theme.props.paper, theme.props.stone]);
-      const t = (i + 0.15) * (along / n);
-      const s = (along / n) * 0.7;
-      if (box.vertical) ctx.fillRect(b.x + b.w * 0.2, b.y + t, b.w * 0.6, s);
-      else ctx.fillRect(b.x + t, b.y + b.h * 0.2, s, b.h * 0.6);
-    }
-  },
-
-  rug: ({ ctx, ppg, theme }, box) => {
-    const b = inset(box, ppg, 0.08);
-    ctx.globalAlpha = 0.85;
-    outlined(ctx, theme.props, ppg, theme.props.cloth, () => ctx.rect(b.x, b.y, b.w, b.h));
-    ctx.globalAlpha = 1;
-    const i = inset(b, ppg, 0.08);
-    ctx.strokeStyle = theme.props.glow;
-    ctx.lineWidth = Math.max(1, ppg * 0.025);
-    ctx.strokeRect(i.x, i.y, i.w, i.h);
-    ctx.beginPath();
-    const cx = i.x + i.w / 2;
-    const cy = i.y + i.h / 2;
-    const rx = Math.min(i.w, i.h) * 0.35;
-    ctx.moveTo(cx - rx, cy);
-    ctx.lineTo(cx, cy - rx);
-    ctx.lineTo(cx + rx, cy);
-    ctx.lineTo(cx, cy + rx);
-    ctx.closePath();
-    ctx.stroke();
-  },
-
-  rubble: (p, b) => {
-    const { ctx, ppg, theme, rng } = p;
-    ctx.strokeStyle = theme.props.line;
-    ctx.lineWidth = Math.max(1, ppg * 0.025);
-    for (let i = 0; i < 6; i++) {
-      ctx.fillStyle = rng.pick([theme.props.stone, theme.props.line, theme.props.stone]);
-      irregularBlob(p, (b.x + b.w * (0.2 + rng.float() * 0.6)) / ppg, (b.y + b.h * (0.2 + rng.float() * 0.6)) / ppg, 0.06 + rng.float() * 0.1, 6);
-      ctx.stroke(); // outlined so pale stones still read on light themes
-    }
-  },
-
-  bones: ({ ctx, ppg, theme, rng }, b) => {
-    const cx = b.x + b.w / 2;
-    const cy = b.y + b.h / 2;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    for (let i = 0; i < 3; i++) {
-      const a = rng.float() * Math.PI;
-      const r = ppg * (0.18 + rng.float() * 0.1);
-      const ox = (rng.float() - 0.5) * ppg * 0.3;
-      const oy = (rng.float() - 0.5) * ppg * 0.3;
-      ctx.moveTo(cx + ox - Math.cos(a) * r, cy + oy - Math.sin(a) * r);
-      ctx.lineTo(cx + ox + Math.cos(a) * r, cy + oy + Math.sin(a) * r);
-    }
-    // A dark outline under the pale bone, so bones read on light floors too.
-    ctx.strokeStyle = theme.props.line;
-    ctx.lineWidth = Math.max(2, ppg * 0.09);
-    ctx.stroke();
-    ctx.strokeStyle = theme.props.paper;
-    ctx.lineWidth = Math.max(1, ppg * 0.05);
-    ctx.stroke();
-    outlined(ctx, theme.props, ppg, theme.props.paper, () => ctx.arc(cx + ppg * 0.12, cy - ppg * 0.1, ppg * 0.11, 0, Math.PI * 2));
-  },
-
-  statue: ({ ctx, ppg, theme }, b) => {
-    const base = inset(b, ppg, 0.12);
-    outlined(ctx, theme.props, ppg, theme.props.stone, () => ctx.rect(base.x, base.y, base.w, base.h));
-    outlined(ctx, theme.props, ppg, theme.props.paper, () => ctx.arc(b.x + b.w / 2, b.y + b.h / 2, ppg * 0.2, 0, Math.PI * 2));
-    ctx.beginPath();
-    ctx.arc(b.x + b.w / 2, b.y + b.h / 2, ppg * 0.08, 0, Math.PI * 2);
-    ctx.stroke();
-  },
-
-  brazier: ({ ctx, ppg, theme }, b) => {
-    const cx = b.x + b.w / 2;
-    const cy = b.y + b.h / 2;
-    glowCircle(ctx, theme.props.glow, cx, cy, ppg * 0.9);
-    outlined(ctx, theme.props, ppg, theme.props.metal, () => ctx.arc(cx, cy, ppg * 0.26, 0, Math.PI * 2));
-    ctx.fillStyle = theme.props.glow;
-    ctx.beginPath();
-    ctx.arc(cx, cy, ppg * 0.14, 0, Math.PI * 2);
-    ctx.fill();
-  },
-
-  console: ({ ctx, ppg, theme }, box) => {
-    const b = inset(box, ppg, box.vertical ? 0.22 : 0.1, box.vertical ? 0.1 : 0.22);
-    outlined(ctx, theme.props, ppg, theme.props.metal, () => roundRect(ctx, b.x, b.y, b.w, b.h, ppg * 0.05));
-    const s = inset(b, ppg, 0.08);
-    ctx.save();
-    ctx.shadowColor = theme.props.glow;
-    ctx.shadowBlur = ppg * 0.25;
-    ctx.fillStyle = theme.props.glow;
-    if (box.vertical) ctx.fillRect(s.x, s.y, s.w, s.h * 0.55);
-    else ctx.fillRect(s.x, s.y, s.w * 0.55, s.h);
-    ctx.restore();
-    ctx.fillStyle = theme.props.line;
-    for (let i = 0; i < 3; i++) {
-      const t = 0.68 + i * 0.1;
-      ctx.beginPath();
-      if (box.vertical) ctx.arc(s.x + s.w / 2, s.y + s.h * t, ppg * 0.035, 0, Math.PI * 2);
-      else ctx.arc(s.x + s.w * t, s.y + s.h / 2, ppg * 0.035, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  },
-
-  coffin: ({ ctx, ppg, theme }, box) => {
-    // The classic six-sided coffin, widest at the shoulders.
-    const v = box.vertical;
-    const len = v ? box.h : box.w;
-    const wid = (v ? box.w : box.h) * 0.62;
-    const ox = box.x + box.w / 2;
-    const oy = box.y + box.h / 2;
-    const pts: [number, number][] = [[-0.46, -0.3], [-0.22, -0.5], [0.46, -0.34], [0.46, 0.34], [-0.22, 0.5], [-0.46, 0.3]];
-    outlined(ctx, theme.props, ppg, theme.props.wood, () => {
-      pts.forEach(([a, c], i) => {
-        const px = v ? ox + c * wid : ox + a * len;
-        const py = v ? oy + a * len : oy + c * wid;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      });
-      ctx.closePath();
-    });
-    // A cross on the lid, its crossbar toward the head end.
-    const L = ppg * 0.5;
-    const S = ppg * 0.24;
-    const cx = v ? ox : ox - len * 0.04;
-    const cy = v ? oy - len * 0.04 : oy;
-    ctx.beginPath();
-    if (v) {
-      ctx.moveTo(cx, cy - L / 2);
-      ctx.lineTo(cx, cy + L / 2);
-      ctx.moveTo(cx - S / 2, cy - L * 0.2);
-      ctx.lineTo(cx + S / 2, cy - L * 0.2);
-    } else {
-      ctx.moveTo(cx - L / 2, cy);
-      ctx.lineTo(cx + L / 2, cy);
-      ctx.moveTo(cx - L * 0.2, cy - S / 2);
-      ctx.lineTo(cx - L * 0.2, cy + S / 2);
-    }
-    ctx.stroke();
-  },
-
-  pod: ({ ctx, ppg, theme }, box) => {
-    const b = inset(box, ppg, 0.12);
-    outlined(ctx, theme.props, ppg, theme.props.metal, () => roundRect(ctx, b.x, b.y, b.w, b.h, Math.min(b.w, b.h) / 2));
-    const g = inset(b, ppg, 0.1);
-    ctx.save();
-    ctx.globalAlpha = 0.75;
-    ctx.shadowColor = theme.props.glow;
-    ctx.shadowBlur = ppg * 0.2;
-    ctx.fillStyle = theme.props.glow;
-    ctx.beginPath();
-    roundRect(ctx, g.x, g.y, g.w, g.h, Math.min(g.w, g.h) / 2);
-    ctx.fill();
-    ctx.restore();
-  },
-};
+// Clutter: each prop kind is drawn by its own PropRenderer (see props/).
 
 function drawProps(p: Paint): void {
   const { ctx, ppg, d } = p;
+  const c: PropPaintContext = { ctx, ppg, rng: p.rng, palette: p.theme.props };
   for (const prop of d.props) {
     const long = PROP_SPECS[prop.kind].long;
     const w = long && !prop.vertical ? 2 : 1;
     const h = long && prop.vertical ? 2 : 1;
     ctx.save();
     ctx.lineJoin = 'round';
-    PROP_PAINTERS[prop.kind](p, { x: prop.x * ppg, y: prop.y * ppg, w: w * ppg, h: h * ppg, vertical: prop.vertical }, prop);
+    PROP_RENDERERS[prop.kind].draw(c, { x: prop.x * ppg, y: prop.y * ppg, w: w * ppg, h: h * ppg, vertical: prop.vertical });
     ctx.restore();
   }
 }
