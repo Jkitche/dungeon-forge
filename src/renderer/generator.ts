@@ -8,24 +8,20 @@ import { RNG, randomSeed } from './rng.ts';
 import { createStocker, stockRoom } from './contents.ts';
 import type { RoomContents } from './contents.ts';
 import { getGenre, isGenreKey } from './genres.ts';
+import { placeClutter } from './clutter.ts';
+import type { Prop } from './clutter.ts';
 import type { GenreKey } from './genres.ts';
 
-export const ROCK = 0;
-export const ROOM = 1;
-export const CORRIDOR = 2;
-export const PILLAR = 3;
-export type CellType = typeof ROCK | typeof ROOM | typeof CORRIDOR | typeof PILLAR;
-
-export const isFloor = (t: number): boolean => t === ROOM || t === CORRIDOR;
-// Not solid rock: floor, or a pillar standing on the floor.
-export const isOpen = (t: number): boolean => t !== ROCK;
-
-// right, down, left, up
-export const DIRS: readonly (readonly [number, number])[] = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+// Cell types and directions live in cells.ts so other modules can use them without
+// importing the generator; re-exported here for existing callers.
+export { ROCK, ROOM, CORRIDOR, PILLAR, isFloor, isOpen, DIRS } from './cells.ts';
+export type { CellType } from './cells.ts';
+import { ROCK, ROOM, CORRIDOR, PILLAR, isFloor, DIRS } from './cells.ts';
 
 export type Algorithm = 'rooms' | 'caves';
 export type CorridorStyle = 'straight' | 'winding';
-export type RoomShape = 'rect' | 'round' | 'octagon' | 'area';
+/** 'irregular' rooms come from hand edits; 'area' is a cavern region. */
+export type RoomShape = 'rect' | 'round' | 'octagon' | 'irregular' | 'area';
 export type DoorType = 'normal' | 'locked' | 'secret';
 
 export interface DungeonOptions {
@@ -45,6 +41,10 @@ export interface DungeonOptions {
   doorChance: number;
   lockedDoorChance: number;
   secretDoorChance: number;
+  /** Chance that each straight stretch of room wall gets a window. */
+  windowChance: number;
+  /** How much furniture and junk fills each room, 0–1. */
+  clutter: number;
   caveFill: number;
   caveSteps: number;
 }
@@ -75,6 +75,15 @@ export interface Door {
   room: number;
 }
 
+/** A window in a wall: the edge (x1,y1)–(x2,y2) between a room's floor and solid rock. */
+export interface MapWindow {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  room: number;
+}
+
 export interface Stair {
   x: number;
   y: number;
@@ -95,7 +104,12 @@ export interface Dungeon {
   roomIds: Int16Array;
   rooms: Room[];
   doors: Door[];
+  windows: MapWindow[];
   stairs: Stair[];
+  /** Decorative furniture and props inside rooms. */
+  props: Prop[];
+  /** Set once the map has been hand-edited; the seed no longer reproduces it. */
+  edited?: boolean;
 }
 
 export type SerializedDungeon = Omit<Dungeon, 'cells' | 'roomIds'> & { cells: string; roomIds: number[] };
@@ -116,6 +130,8 @@ export const DEFAULT_OPTIONS: DungeonOptions = {
   doorChance: 0.8,
   lockedDoorChance: 0.15,
   secretDoorChance: 0.1,
+  windowChance: 0.1,
+  clutter: 0.4,
   caveFill: 0.45,
   caveSteps: 5,
 };
@@ -123,7 +139,7 @@ export const DEFAULT_OPTIONS: DungeonOptions = {
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 const num = (v: unknown, fallback: number): number => (Number.isFinite(Number(v)) ? Number(v) : fallback);
 
-const CHANCE_KEYS = ['roundRoomChance', 'pillarChance', 'loopChance', 'doorChance', 'lockedDoorChance', 'secretDoorChance'] as const;
+const CHANCE_KEYS = ['roundRoomChance', 'pillarChance', 'loopChance', 'doorChance', 'lockedDoorChance', 'secretDoorChance', 'windowChance', 'clutter'] as const;
 
 export function normalizeOptions(input: Partial<DungeonOptions> = {}): DungeonOptions {
   const o: DungeonOptions = { ...DEFAULT_OPTIONS, ...input };
@@ -158,7 +174,9 @@ export function generateDungeon(input: Partial<DungeonOptions> = {}): Dungeon {
     roomIds: new Int16Array(W * H).fill(-1),
     rooms: [],
     doors: [],
+    windows: [],
     stairs: [],
+    props: [],
   };
   // Per-cell noise makes winding corridors and cave tunnels wander deterministically.
   const noise = new Float32Array(W * H);
@@ -172,6 +190,7 @@ export function generateDungeon(input: Partial<DungeonOptions> = {}): Dungeon {
   if (o.algorithm === 'rooms') {
     placePillars(d, rng, o, pathCells);
     placeDoors(d, rng, o);
+    placeWindows(d, o);
   }
 
   // Contents are rolled after the layout, so a seed keeps its floor plan across genres.
@@ -180,6 +199,8 @@ export function generateDungeon(input: Partial<DungeonOptions> = {}): Dungeon {
     room.contents = stockRoom(rng, decks, { isEntrance: room.entrance, isExit: room.exit });
     room.doorCount = d.doors.filter((door) => door.room === room.id).length;
   }
+  // After stocking, because room names steer the choice of props.
+  placeClutter(d, o.clutter, o.genre);
   return d;
 }
 
@@ -218,7 +239,7 @@ function buildRooms(d: Dungeon, rng: RNG, o: DungeonOptions, noise: Float32Array
   connectRooms(d, rng, o, noise, pathCells);
 }
 
-function inRoomShape(room: Room, i: number, j: number): boolean {
+export function inRoomShape(room: Room, i: number, j: number): boolean {
   const { w, h, shape } = room;
   if (shape === 'round') {
     const dx = (i + 0.5 - w / 2) / (w / 2);
@@ -359,6 +380,60 @@ function placeDoors(d: Dungeon, rng: RNG, o: DungeonOptions): void {
         ? { x1: Math.max(x, x + dx), y1: y, x2: Math.max(x, x + dx), y2: y + 1 }
         : { x1: x, y1: Math.max(y, y + dy), x2: x + 1, y2: Math.max(y, y + dy) };
       d.doors.push({ ...edge, type, room: roomIds[c] as number });
+    }
+  }
+}
+
+/**
+ * Puts windows in straight stretches of room wall that face rock, away from corners,
+ * doors and stairs. Uses its own random stream so windows never change the layout or
+ * room contents a seed produces.
+ */
+function placeWindows(d: Dungeon, o: DungeonOptions): void {
+  if (o.windowChance <= 0) return;
+  const rng = new RNG(`${d.seed}:windows`);
+  const W = d.width;
+  const stairCells = new Set(d.stairs.map((s) => s.y * W + s.x));
+  const nearDoor = (e: { x1: number; y1: number; x2: number; y2: number }): boolean =>
+    d.doors.some((o) => Math.abs(o.x1 + o.x2 - e.x1 - e.x2) / 2 + Math.abs(o.y1 + o.y2 - e.y1 - e.y2) / 2 < 2);
+
+  for (const r of d.rooms) {
+    if (r.shape === 'area') continue;
+    for (const [dx, dy] of DIRS) {
+      // Wall edges facing this direction, keyed by the row/column they lie on.
+      const lines = new Map<number, number[]>();
+      for (let y = r.y; y < r.y + r.h; y++) {
+        for (let x = r.x; x < r.x + r.w; x++) {
+          const c = y * W + x;
+          if (d.roomIds[c] !== r.id || d.cells[c] !== ROOM || stairCells.has(c)) continue;
+          if (d.cells[c + dy * W + dx] !== ROCK) continue;
+          const line = dx === 0 ? y : x;
+          const list = lines.get(line);
+          if (list) list.push(dx === 0 ? x : y);
+          else lines.set(line, [dx === 0 ? x : y]);
+        }
+      }
+      for (const [line, positions] of lines) {
+        positions.sort((a, b) => a - b);
+        // Split into straight runs of consecutive squares.
+        const runs: number[][] = [];
+        for (const p of positions) {
+          const run = runs[runs.length - 1];
+          if (run && p === (run[run.length - 1] as number) + 1) run.push(p);
+          else runs.push([p]);
+        }
+        for (const run of runs) {
+          if (run.length < 3 || !rng.chance(o.windowChance)) continue;
+          const count = run.length >= 8 ? 2 : 1;
+          for (let k = 1; k <= count; k++) {
+            const pos = run[Math.round((k * (run.length - 1)) / (count + 1))] as number;
+            const edge = dx === 0
+              ? { x1: pos, y1: dy < 0 ? line : line + 1, x2: pos + 1, y2: dy < 0 ? line : line + 1 }
+              : { x1: dx < 0 ? line : line + 1, y1: pos, x2: dx < 0 ? line : line + 1, y2: pos + 1 };
+            if (!nearDoor(edge)) d.windows.push({ ...edge, room: r.id });
+          }
+        }
+      }
     }
   }
 }
@@ -509,6 +584,24 @@ function placeCaveAreas(d: Dungeon, rng: RNG, o: DungeonOptions): void {
         queue.push(n);
       }
     }
+  }
+
+  // Like every room, an area's x/y/w/h are the bounds of the squares it owns.
+  for (const r of d.rooms) Object.assign(r, { x: Infinity, y: Infinity, w: 0, h: 0 });
+  const maxX = d.rooms.map(() => -1);
+  const maxY = d.rooms.map(() => -1);
+  for (const c of queue) {
+    const r = d.rooms[d.roomIds[c] as number] as Room;
+    const x = c % W;
+    const y = Math.floor(c / W);
+    r.x = Math.min(r.x, x);
+    r.y = Math.min(r.y, y);
+    maxX[r.id] = Math.max(maxX[r.id] as number, x);
+    maxY[r.id] = Math.max(maxY[r.id] as number, y);
+  }
+  for (const r of d.rooms) {
+    r.w = (maxX[r.id] as number) - r.x + 1;
+    r.h = (maxY[r.id] as number) - r.y + 1;
   }
 }
 
@@ -726,6 +819,9 @@ export function deserializeDungeon(obj: unknown): Dungeon {
   const full = s as SerializedDungeon;
   return {
     ...full,
+    // Maps saved before windows existed have none.
+    windows: full.windows ?? [],
+    props: full.props ?? [],
     cells: Uint8Array.from(full.cells, (ch) => Number(ch)),
     roomIds: Int16Array.from(full.roomIds),
   };

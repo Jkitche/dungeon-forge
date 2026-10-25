@@ -29,15 +29,38 @@ The project is written entirely in TypeScript (strict mode, TypeScript 7), and N
   | Gothic Horror | Gothic Crypt | Checkerboard tiles, candlelight, bloodstains | Winding passages, many secret doors |
   | Post-Apocalyptic | Wasteland | Cracked concrete, rust, rubble, sheet-metal doors, ladders | Winding, few doors, many loops |
 
-  Picking a setting switches the theme and layout sliders to match. Afterwards you can still choose any theme with any setting.
+  Picking a setting switches the art and layout sliders to match. The Look switch can still swap in Blueprint or Dark Stone.
 - **Two layouts.** *Rooms & corridors* gives rectangular, round and octagonal rooms, pillared halls, and straight or winding corridors with optional loops. *Caverns* gives organic caves built by cellular automata, with every pocket tunnelled together.
 - **Doors.** Normal, locked and secret doors are placed only on 1-square entrances.
 - **Stairs.** The entrance and the exit are placed as far apart as the layout allows. Rooms are numbered by walking distance from the entrance.
 - **Room key.** Every room is stocked with a name, atmosphere, feature and contents (monster, trap, special or empty, plus treasure). Click a room on the map or in the key to highlight it.
 - **Seeds.** Each seed always produces the same dungeon, so you can share a seed or tweak the sliders without losing the layout.
-- **Seven themes.** The five above, plus Blueprint (old-school blue) and Dark Stone (flagstones and shadows).
+- **Look.** The art follows the setting. The **Look** switch in the Style section can swap any setting's art for **Blueprint** (old-school blue, good for print) or **Dark Stone** (flagstones and shadows, good for VTTs).
 - **GM and player views.** The player view hides room numbers and draws secret doors as plain wall.
 - **Save and open.** Maps save as `.dungeon.json` files.
+
+## Clutter
+
+The **Clutter** slider fills rooms with furniture and props. Each setting has its own set: barrels, crates, beds and bookshelves for fantasy, consoles and cryo pods for sci-fi, coffins and candelabra-lit braziers for gothic horror, and so on. Room names steer the choice, so a Library gets shelves, Barracks get beds and a Crypt gets coffins and bones. Shelves, beds and consoles stand against walls; tables, rugs and statues go mid-room. Doorways, corridor openings, stairs and room numbers are always kept clear.
+
+Clutter is decoration only: it's drawn on the map image but doesn't block movement or sight in VTT exports. It uses its own random stream, so changing the slider never changes a seed's floor plan or room key.
+
+## Drawing your own maps
+
+Click **Edit map** (Ctrl+Shift+E) to edit the current map and choose a tool from the **Tool** list (or press its key), or use **File › New Blank Map** (Ctrl+Shift+N) to start from solid rock.
+
+| Tool | Key | What it does |
+|---|---|---|
+| Room | R | Drag a rectangle. Drawing over another room takes those squares. |
+| Corridor | C | Drag to paint corridor through rock; hold Shift for a rectangle. |
+| Erase | E | Drag to turn squares back into rock; hold Shift for a rectangle. |
+| Door | D | Click an edge between two floor squares: door, then locked, then secret, then none. |
+| Window | W | Click a wall between floor and rock to add or remove a window. |
+| Pillar | P | Click a floor square to add or remove a pillar. |
+| Clutter | F | Pick a prop from the **Prop** list (the setting's own props come first), then click floor to place it. Click a prop to remove it, Shift-click to turn it. |
+| Stairs | S | Click a floor square: stairs up, then down, then none. |
+
+Undo with Ctrl+Z and redo with Ctrl+Shift+Z. In edit mode, right-drag or hold Space to pan. New rooms are stocked from the current setting's tables and appear in the room key straight away. Walls are worked out from the floor, so every export works on hand-drawn maps too. Once a map has been edited, the seed no longer reproduces it, so the app asks before anything would regenerate over your work. Save it with **Save** to keep it.
 
 ## Export targets (Ctrl+E)
 
@@ -50,6 +73,8 @@ The project is written entirely in TypeScript (strict mode, TypeScript 7), and N
 | **Universal VTT** | `.dd2vtt` containing the image, walls, pillars and doors | Foundry (Universal Battlemap Importer), Arkenforge, EncounterPlus, Roll20 (UniversalVTTImporter), and others. |
 | **Image (PNG)** | A PNG at any resolution, with an optional baked-in grid | Owlbear Rodeo, Shard, Let's Role, printing, and so on. Set the VTT's grid to the pixels per square you exported. |
 | **Room key** | Markdown | Notes apps, handouts, journals. |
+
+Windows block movement but not sight. Foundry gets a wall that blocks movement but not sight or light, with sound muffled. Fantasy Grounds Unity gets a window occluder (`allow_vision`). Universal VTT gets an open portal, which is how Roll20's UniversalVTTImporter and uvtt2fgu recognise windows; other importers may treat it as an open door.
 
 Universal VTT has no secret-door flag, and Fantasy Grounds' secret-door flag isn't documented, so both exports bring secret doors in as ordinary closed doors. The Fantasy Grounds notes file lists where they are so you can switch them to secret in FG's line-of-sight editor. The Foundry export keeps them secret.
 
@@ -89,6 +114,10 @@ src/
     index.html, styles.css
     app.ts              UI wiring
     generator.ts        Dungeon generation (pure, no DOM)
+    editor.ts           Hand-editing operations and the consistency pass (pure, no DOM)
+    editor-ui.ts        Edit mode: tools, undo history and drawing previews
+    clutter.ts          Room furniture: prop types, per-setting pools, room-name hints, placement
+    cells.ts            Cell types and grid directions shared across modules
     genres.ts           Settings: content tables, vocabulary, default theme and layout
     contents.ts         Room stocking (d6 monster / trap / special / empty)
     walls.ts            Wall and pillar geometry derived from the grid

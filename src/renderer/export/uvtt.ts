@@ -18,6 +18,18 @@ export interface UniversalVTT {
   image: string;
 }
 
+type Portal = UniversalVTT['portals'][number];
+
+function portal(e: { x1: number; y1: number; x2: number; y2: number }, closed: boolean): Portal {
+  return {
+    position: { x: (e.x1 + e.x2) / 2, y: (e.y1 + e.y2) / 2 },
+    bounds: [{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }],
+    rotation: e.y1 === e.y2 ? 0 : Math.PI / 2,
+    closed,
+    freestanding: false,
+  };
+}
+
 export function buildUVTT(d: Dungeon, ppg: number, imageBase64: string): UniversalVTT {
   return {
     format: 0.3,
@@ -26,15 +38,15 @@ export function buildUVTT(d: Dungeon, ppg: number, imageBase64: string): Univers
       map_size: { x: d.width, y: d.height },
       pixels_per_grid: ppg,
     },
-    line_of_sight: computeWalls(d).map((s) => [{ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }]),
+    // Windows become open portals (below), so leave them out of the walls.
+    line_of_sight: computeWalls(d, d.windows).map((s) => [{ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }]),
     objects_line_of_sight: computePillarOutlines(d),
-    portals: d.doors.map((door) => ({
-      position: { x: (door.x1 + door.x2) / 2, y: (door.y1 + door.y2) / 2 },
-      bounds: [{ x: door.x1, y: door.y1 }, { x: door.x2, y: door.y2 }],
-      rotation: door.y1 === door.y2 ? 0 : Math.PI / 2,
-      closed: true,
-      freestanding: false,
-    })),
+    portals: [
+      ...d.doors.map((door) => portal(door, true)),
+      // Dungeondraft has no window type: importers such as Roll20's UniversalVTTImporter
+      // and uvtt2fgu read an open portal as a window.
+      ...d.windows.map((w) => portal(w, false)),
+    ],
     environment: { baked_lighting: true, ambient_light: 'ffffffff' },
     lights: [],
     image: imageBase64,

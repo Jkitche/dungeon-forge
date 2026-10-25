@@ -46,6 +46,7 @@ function buildMenu(): void {
       label: 'File',
       submenu: [
         { label: 'New Dungeon', accelerator: 'CmdOrCtrl+N', click: send('new') },
+        { label: 'New Blank Map', accelerator: 'CmdOrCtrl+Shift+N', click: send('blank') },
         { label: 'Regenerate (Same Seed)', accelerator: 'CmdOrCtrl+R', click: send('regenerate') },
         { type: 'separator' },
         { label: 'Open Map…', accelerator: 'CmdOrCtrl+O', click: send('open') },
@@ -59,6 +60,7 @@ function buildMenu(): void {
     {
       label: 'View',
       submenu: [
+        { label: 'Edit Map', accelerator: 'CmdOrCtrl+Shift+E', click: send('toggle-edit') },
         { label: 'Toggle GM / Player View', accelerator: 'CmdOrCtrl+G', click: send('toggle-gm') },
         { label: 'Fit Map to Window', accelerator: 'CmdOrCtrl+0', click: send('fit') },
         { type: 'separator' },

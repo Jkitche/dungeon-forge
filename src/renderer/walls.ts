@@ -17,15 +17,20 @@ export interface Point {
   y: number;
 }
 
-export function computeWalls(d: Dungeon): Segment[] {
+/**
+ * Wall segments. Unit edges listed in `skip` (windows, for exports that represent them
+ * separately) are left out, splitting the walls around them.
+ */
+export function computeWalls(d: Dungeon, skip: readonly Segment[] = []): Segment[] {
   const { width: W, height: H, cells } = d;
   const open = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < W && y < H && isOpen(cells[y * W + x] as number);
+  const skipped = new Set(skip.map((e) => `${e.x1},${e.y1},${e.x2},${e.y2}`));
   const segs: Segment[] = [];
 
   for (let y = 0; y <= H; y++) {
     let start = -1;
     for (let x = 0; x <= W; x++) {
-      const wall = x < W && open(x, y - 1) !== open(x, y);
+      const wall = x < W && open(x, y - 1) !== open(x, y) && !skipped.has(`${x},${y},${x + 1},${y}`);
       if (wall && start < 0) start = x;
       if (!wall && start >= 0) {
         segs.push({ x1: start, y1: y, x2: x, y2: y });
@@ -36,7 +41,7 @@ export function computeWalls(d: Dungeon): Segment[] {
   for (let x = 0; x <= W; x++) {
     let start = -1;
     for (let y = 0; y <= H; y++) {
-      const wall = y < H && open(x - 1, y) !== open(x, y);
+      const wall = y < H && open(x - 1, y) !== open(x, y) && !skipped.has(`${x},${y},${x},${y + 1}`);
       if (wall && start < 0) start = y;
       if (!wall && start >= 0) {
         segs.push({ x1: x, y1: start, x2: x, y2: y });

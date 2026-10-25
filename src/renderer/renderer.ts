@@ -8,6 +8,8 @@ import { RNG } from './rng.ts';
 import { isFloor, isOpen, ROCK, ROOM, CORRIDOR, PILLAR, DIRS } from './generator.ts';
 import type { Dungeon, Door } from './generator.ts';
 import { computeWalls, PILLAR_RADIUS } from './walls.ts';
+import { PROP_SPECS } from './clutter.ts';
+import type { Prop, PropKind } from './clutter.ts';
 
 type RGB = readonly [number, number, number];
 
@@ -17,6 +19,19 @@ export type DoorStyle = 'outline' | 'wood' | 'sliding' | 'hatch' | 'metal';
 export type StairStyle = 'steps' | 'lift' | 'ladder';
 export type PillarStyle = 'round' | 'square' | 'boiler';
 export type DecorStyle = 'gears' | 'pipes' | 'rivets' | 'hazard' | 'candles' | 'stains' | 'debris';
+
+/** Colours for room clutter. Light themes use pale fills with dark outlines, like a hand-drawn map. */
+export interface PropPalette {
+  wood: string;
+  metal: string;
+  cloth: string;
+  stone: string;
+  line: string;
+  /** Fire, screens and other light sources. */
+  glow: string;
+  /** Pillows, pages, bone. */
+  paper: string;
+}
 
 export interface Theme {
   label: string;
@@ -37,6 +52,10 @@ export interface Theme {
   stairFill?: string;
   pillarFill: string;
   pillarStroke: string;
+  props: PropPalette;
+  /** Window pane and frame; default to the floor and wall colours. */
+  windowGlass?: string;
+  windowFrame?: string;
   text: string;
   halo: string;
   font: string;
@@ -67,6 +86,8 @@ export const THEMES: Record<ThemeKey, Theme> = {
     door: '#fdf8ec', doorStroke: '#2b2219', stair: '#2b2219',
     pillarFill: '#2b2219', pillarStroke: '#2b2219',
     text: '#2b2219', halo: '#fdf8ec', font: SERIF,
+    windowGlass: '#fdf8ec',
+    props: { wood: '#efe4c8', metal: '#ddd2b8', cloth: '#e8d9bb', stone: '#e4dac6', line: '#2b2219', glow: '#e6a63c', paper: '#fdf8ec' },
     rock: 'hatch', rockLine: '#3d3125',
     floorStyle: 'plain', doorStyle: 'outline', stairStyle: 'steps', pillarStyle: 'round',
   },
@@ -77,6 +98,8 @@ export const THEMES: Record<ThemeKey, Theme> = {
     door: '#ffffff', doorStroke: '#1d3b6e', stair: '#1d3b6e',
     pillarFill: '#1d3b6e', pillarStroke: '#1d3b6e',
     text: '#1d3b6e', halo: '#ffffff', font: SERIF,
+    windowGlass: '#ffffff',
+    props: { wood: '#ffffff', metal: '#eef4fb', cloth: '#f4f8fd', stone: '#ffffff', line: '#1d3b6e', glow: '#9fc0e8', paper: '#ffffff' },
     rock: 'grid', rockLine: 'rgba(255, 255, 255, 0.2)',
     floorStyle: 'plain', doorStyle: 'outline', stairStyle: 'steps', pillarStyle: 'round',
   },
@@ -87,6 +110,8 @@ export const THEMES: Record<ThemeKey, Theme> = {
     door: '#7b5432', doorStroke: '#24170b', stair: '#2a2622', stairFill: '#8e877c',
     pillarFill: '#3a3632', pillarStroke: '#0b0a09',
     text: '#f6eedc', halo: '#151413', font: SERIF, secretMark: '#e0b44c', lockMark: '#d9b25a',
+    windowGlass: '#9cc3cf', windowFrame: '#2a2622',
+    props: { wood: '#6b4a2b', metal: '#5c5f63', cloth: '#7a2e2a', stone: '#8d877c', line: '#16130f', glow: '#ffb347', paper: '#d9cfb8' },
     rock: 'speckle', rockColors: ['#1d1b19', '#211f1c', '#191816', '#25221f'],
     floorStyle: 'flagstone', floorTone: [122, 116, 106],
     doorStyle: 'wood', stairStyle: 'steps', pillarStyle: 'round',
@@ -99,6 +124,8 @@ export const THEMES: Record<ThemeKey, Theme> = {
     pillarFill: '#263241', pillarStroke: '#5fd4ff',
     text: '#c8f2ff', halo: '#070a10', font: '"Consolas", "DejaVu Sans Mono", ui-monospace, monospace',
     secretMark: '#ffcf4a',
+    windowGlass: '#8fe6ff', windowFrame: '#1c2836',
+    props: { wood: '#3b4757', metal: '#4a5868', cloth: '#2d4a6b', stone: '#5a6672', line: '#0b1118', glow: '#5fd4ff', paper: '#c8d4e0' },
     rock: 'plating', rockColors: ['#0f151e', '#121a25', '#0d131b'], rockLine: '#1a2431',
     floorStyle: 'deckplate', floorTone: [50, 60, 74],
     doorStyle: 'sliding', stairStyle: 'lift', pillarStyle: 'square',
@@ -111,6 +138,8 @@ export const THEMES: Record<ThemeKey, Theme> = {
     door: '#4a4c50', doorStroke: '#c0924f', stair: '#2a1a0f', stairFill: '#9a7046',
     pillarFill: '#d4945a', pillarStroke: '#5a3517',
     text: '#f4dfb5', halo: '#1c140e', font: SERIF, secretMark: '#f0c070', lockMark: '#c0392b',
+    windowGlass: '#bcd8d2', windowFrame: '#c0924f',
+    props: { wood: '#8a5c34', metal: '#a8743c', cloth: '#6b2a2a', stone: '#7a7068', line: '#2a1a0f', glow: '#ffb347', paper: '#e8d8b0' },
     rock: 'brick', rockColors: ['#3b2619', '#432b1b', '#35221a', '#3f2a1c'],
     floorStyle: 'planks', floorTone: [124, 84, 50],
     doorStyle: 'hatch', stairStyle: 'lift', pillarStyle: 'boiler',
@@ -124,6 +153,8 @@ export const THEMES: Record<ThemeKey, Theme> = {
     pillarFill: '#4a4350', pillarStroke: '#08060a',
     text: '#eadbc6', halo: '#0e0b10', font: '"Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif',
     secretMark: '#d0453a', lockMark: '#c9a227',
+    windowGlass: '#9b3b6a', windowFrame: '#c9a227',
+    props: { wood: '#3e2722', metal: '#6a6470', cloth: '#5e1a2c', stone: '#625c6a', line: '#08060a', glow: '#ffb347', paper: '#cfc2a8' },
     rock: 'speckle', rockColors: ['#1a151d', '#1e1822', '#16121a', '#221b26'],
     floorStyle: 'checker', floorTone: [62, 55, 70], floorAlt: [44, 38, 51],
     doorStyle: 'wood', stairStyle: 'steps', pillarStyle: 'round',
@@ -137,6 +168,8 @@ export const THEMES: Record<ThemeKey, Theme> = {
     pillarFill: '#8a4b25', pillarStroke: '#2b1d14',
     text: '#1f1a14', halo: '#e3d5b2', font: 'Impact, "Arial Narrow Bold", "Arial Black", sans-serif',
     secretMark: '#b3261e', lockMark: '#e0b030',
+    windowGlass: '#9fb1ab', windowFrame: '#3d2f25',
+    props: { wood: '#6e5a40', metal: '#8a4b25', cloth: '#5a6a4a', stone: '#8a8478', line: '#2b1d14', glow: '#ffcf4a', paper: '#cbbf9f' },
     rock: 'rubble', rockColors: ['#7d6a48', '#6f5e40', '#a08a62', '#5f5137'], rockLine: 'rgba(60, 45, 25, 0.6)',
     floorStyle: 'concrete', floorTone: [128, 124, 116],
     doorStyle: 'metal', stairStyle: 'ladder', pillarStyle: 'round',
@@ -145,6 +178,20 @@ export const THEMES: Record<ThemeKey, Theme> = {
 };
 
 export const isThemeKey = (k: unknown): k is ThemeKey => typeof k === 'string' && k in THEMES;
+
+/**
+ * The user's choice of art: the theme that matches the map's setting, or one of the two
+ * setting-neutral themes (old-school blue for print, dark stone for VTTs).
+ */
+export type Look = 'setting' | 'blueprint' | 'stone';
+
+export const LOOKS: readonly [Look, string][] = [['setting', 'Setting'], ['blueprint', 'Blueprint'], ['stone', 'Dark Stone']];
+
+export const isLook = (k: unknown): k is Look => LOOKS.some(([l]) => l === k);
+
+export function resolveTheme(look: Look, settingTheme: ThemeKey): ThemeKey {
+  return look === 'setting' ? settingTheme : look;
+}
 
 export interface RenderOptions {
   ppg?: number;
@@ -198,11 +245,13 @@ export function renderDungeon(canvas: HTMLCanvasElement, d: Dungeon, opts: Rende
   ctx.restore();
 
   for (const s of d.stairs) STAIR_PAINTERS[theme.stairStyle](p, s.x, s.y, s.dir, s.kind);
+  drawProps(p);
   runDecor('beforeWalls');
   drawWalls(p);
   for (let c = 0; c < d.cells.length; c++) {
     if (d.cells[c] === PILLAR) PILLAR_PAINTERS[theme.pillarStyle](p, (c % d.width) + 0.5, Math.floor(c / d.width) + 0.5);
   }
+  drawWindows(p);
   runDecor('afterWalls');
   drawDoors(p);
   if (p.gm && (opts.showLabels ?? true)) drawLabels(p);
@@ -868,6 +917,41 @@ const DOOR_PAINTERS: Record<DoorStyle, (p: Paint, door: Door) => void> = {
   },
 };
 
+/** A pane set into the wall line, with a glazing bar along it. Glows on themes with glowing walls. */
+function drawWindows({ ctx, d, ppg, theme }: Paint): void {
+  const glass = theme.windowGlass ?? theme.floor;
+  const frame = theme.windowFrame ?? theme.wall;
+  const len = ppg * 0.7;
+  const thick = Math.max(3, ppg * theme.wallWidth);
+  for (const w of d.windows) {
+    const horiz = w.y1 === w.y2;
+    const mx = ((w.x1 + w.x2) / 2) * ppg;
+    const my = ((w.y1 + w.y2) / 2) * ppg;
+    const bw = horiz ? len : thick;
+    const bh = horiz ? thick : len;
+    ctx.save();
+    if (theme.wallLine) {
+      ctx.shadowColor = glass;
+      ctx.shadowBlur = ppg * 0.3;
+    }
+    ctx.fillStyle = glass;
+    ctx.fillRect(mx - bw / 2, my - bh / 2, bw, bh);
+    ctx.restore();
+    ctx.strokeStyle = frame;
+    ctx.lineWidth = Math.max(1, ppg * 0.035);
+    ctx.strokeRect(mx - bw / 2, my - bh / 2, bw, bh);
+    ctx.beginPath();
+    if (horiz) {
+      ctx.moveTo(mx - len / 2, my);
+      ctx.lineTo(mx + len / 2, my);
+    } else {
+      ctx.moveTo(mx, my - len / 2);
+      ctx.lineTo(mx, my + len / 2);
+    }
+    ctx.stroke();
+  }
+}
+
 function drawDoors(p: Paint): void {
   const { ctx, ppg, theme, gm } = p;
   for (const door of p.d.doors) {
@@ -1116,6 +1200,293 @@ const DECOR: Record<DecorStyle, { phase: DecorPhase; paint: (p: Paint) => void }
     },
   },
 };
+
+// ---------------------------------------------------------------------------
+// Clutter
+
+/** A prop's footprint in pixels, plus its orientation. */
+interface PropBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  vertical: boolean;
+}
+
+type PropPainter = (p: Paint, b: PropBox, prop: Prop) => void;
+
+function outlined(ctx: Ctx, pal: PropPalette, ppg: number, fill: string, draw: () => void): void {
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = pal.line;
+  ctx.lineWidth = Math.max(1, ppg * 0.035);
+  ctx.beginPath();
+  draw();
+  ctx.fill();
+  ctx.stroke();
+}
+
+function roundRect(ctx: Ctx, x: number, y: number, w: number, h: number, r: number): void {
+  ctx.roundRect(x, y, w, h, r);
+}
+
+/** Inset a box by fractions of a square on each axis. */
+const inset = (b: PropBox, ppg: number, ix: number, iy = ix): PropBox => ({
+  ...b, x: b.x + ppg * ix, y: b.y + ppg * iy, w: b.w - ppg * ix * 2, h: b.h - ppg * iy * 2,
+});
+
+/** '#rrggbb' to 'rgba(r, g, b, a)'. */
+function withAlpha(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1, 7), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+function glowCircle(ctx: Ctx, color: string, x: number, y: number, r: number): void {
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  // Fade to the same colour, fully transparent; fading to transparent black looks muddy.
+  g.addColorStop(0, withAlpha(color, 0.55));
+  g.addColorStop(1, withAlpha(color, 0));
+  ctx.fillStyle = g;
+  ctx.fillRect(x - r, y - r, r * 2, r * 2);
+}
+
+const PROP_PAINTERS: Record<PropKind, PropPainter> = {
+  crate: ({ ctx, ppg, theme }, box) => {
+    const b = inset(box, ppg, 0.14);
+    outlined(ctx, theme.props, ppg, theme.props.wood, () => ctx.rect(b.x, b.y, b.w, b.h));
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b.x + b.w, b.y + b.h);
+    ctx.moveTo(b.x + b.w, b.y);
+    ctx.lineTo(b.x, b.y + b.h);
+    ctx.stroke();
+  },
+
+  barrel: ({ ctx, ppg, theme }, b) => {
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    outlined(ctx, theme.props, ppg, theme.props.wood, () => ctx.arc(cx, cy, ppg * 0.34, 0, Math.PI * 2));
+    ctx.strokeStyle = theme.props.metal;
+    ctx.beginPath();
+    ctx.arc(cx, cy, ppg * 0.22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = theme.props.line;
+    ctx.beginPath();
+    ctx.arc(cx, cy, ppg * 0.08, 0, Math.PI * 2);
+    ctx.stroke();
+  },
+
+  chest: ({ ctx, ppg, theme }, box) => {
+    const b = inset(box, ppg, 0.16, 0.26);
+    outlined(ctx, theme.props, ppg, theme.props.wood, () => roundRect(ctx, b.x, b.y, b.w, b.h, ppg * 0.05));
+    ctx.fillStyle = theme.props.metal;
+    ctx.fillRect(b.x, b.y + b.h * 0.42, b.w, b.h * 0.16);
+    ctx.beginPath();
+    ctx.arc(b.x + b.w / 2, b.y + b.h / 2, ppg * 0.05, 0, Math.PI * 2);
+    ctx.fillStyle = theme.props.line;
+    ctx.fill();
+  },
+
+  table: ({ ctx, ppg, theme }, box) => {
+    const b = inset(box, ppg, 0.14);
+    outlined(ctx, theme.props, ppg, theme.props.wood, () => roundRect(ctx, b.x, b.y, b.w, b.h, ppg * 0.06));
+    // Something on the table: a candle, a plate.
+    ctx.fillStyle = theme.props.paper;
+    ctx.beginPath();
+    ctx.arc(b.x + b.w * 0.3, b.y + b.h * 0.5, ppg * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = theme.props.glow;
+    ctx.beginPath();
+    ctx.arc(b.x + b.w * 0.72, b.y + b.h * 0.45, ppg * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+  },
+
+  bed: ({ ctx, ppg, theme }, box) => {
+    const b = inset(box, ppg, 0.1);
+    outlined(ctx, theme.props, ppg, theme.props.cloth, () => roundRect(ctx, b.x, b.y, b.w, b.h, ppg * 0.06));
+    const pw = box.vertical ? b.w * 0.8 : ppg * 0.32;
+    const ph = box.vertical ? ppg * 0.32 : b.h * 0.8;
+    const px = box.vertical ? b.x + (b.w - pw) / 2 : b.x + ppg * 0.08;
+    const py = box.vertical ? b.y + ppg * 0.08 : b.y + (b.h - ph) / 2;
+    outlined(ctx, theme.props, ppg, theme.props.paper, () => roundRect(ctx, px, py, pw, ph, ppg * 0.06));
+  },
+
+  shelf: ({ ctx, ppg, theme, rng }, box) => {
+    const b = inset(box, ppg, box.vertical ? 0.3 : 0.08, box.vertical ? 0.08 : 0.3);
+    outlined(ctx, theme.props, ppg, theme.props.wood, () => ctx.rect(b.x, b.y, b.w, b.h));
+    // Books or boxes along the shelf.
+    const along = box.vertical ? b.h : b.w;
+    const n = 6;
+    for (let i = 0; i < n; i++) {
+      ctx.fillStyle = rng.pick([theme.props.cloth, theme.props.metal, theme.props.paper, theme.props.stone]);
+      const t = (i + 0.15) * (along / n);
+      const s = (along / n) * 0.7;
+      if (box.vertical) ctx.fillRect(b.x + b.w * 0.2, b.y + t, b.w * 0.6, s);
+      else ctx.fillRect(b.x + t, b.y + b.h * 0.2, s, b.h * 0.6);
+    }
+  },
+
+  rug: ({ ctx, ppg, theme }, box) => {
+    const b = inset(box, ppg, 0.08);
+    ctx.globalAlpha = 0.85;
+    outlined(ctx, theme.props, ppg, theme.props.cloth, () => ctx.rect(b.x, b.y, b.w, b.h));
+    ctx.globalAlpha = 1;
+    const i = inset(b, ppg, 0.08);
+    ctx.strokeStyle = theme.props.glow;
+    ctx.lineWidth = Math.max(1, ppg * 0.025);
+    ctx.strokeRect(i.x, i.y, i.w, i.h);
+    ctx.beginPath();
+    const cx = i.x + i.w / 2;
+    const cy = i.y + i.h / 2;
+    const rx = Math.min(i.w, i.h) * 0.35;
+    ctx.moveTo(cx - rx, cy);
+    ctx.lineTo(cx, cy - rx);
+    ctx.lineTo(cx + rx, cy);
+    ctx.lineTo(cx, cy + rx);
+    ctx.closePath();
+    ctx.stroke();
+  },
+
+  rubble: (p, b) => {
+    const { ctx, ppg, theme, rng } = p;
+    ctx.strokeStyle = theme.props.line;
+    ctx.lineWidth = Math.max(1, ppg * 0.025);
+    for (let i = 0; i < 6; i++) {
+      ctx.fillStyle = rng.pick([theme.props.stone, theme.props.line, theme.props.stone]);
+      irregularBlob(p, (b.x + b.w * (0.2 + rng.float() * 0.6)) / ppg, (b.y + b.h * (0.2 + rng.float() * 0.6)) / ppg, 0.06 + rng.float() * 0.1, 6);
+      ctx.stroke(); // outlined so pale stones still read on light themes
+    }
+  },
+
+  bones: ({ ctx, ppg, theme, rng }, b) => {
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < 3; i++) {
+      const a = rng.float() * Math.PI;
+      const r = ppg * (0.18 + rng.float() * 0.1);
+      const ox = (rng.float() - 0.5) * ppg * 0.3;
+      const oy = (rng.float() - 0.5) * ppg * 0.3;
+      ctx.moveTo(cx + ox - Math.cos(a) * r, cy + oy - Math.sin(a) * r);
+      ctx.lineTo(cx + ox + Math.cos(a) * r, cy + oy + Math.sin(a) * r);
+    }
+    // A dark outline under the pale bone, so bones read on light floors too.
+    ctx.strokeStyle = theme.props.line;
+    ctx.lineWidth = Math.max(2, ppg * 0.09);
+    ctx.stroke();
+    ctx.strokeStyle = theme.props.paper;
+    ctx.lineWidth = Math.max(1, ppg * 0.05);
+    ctx.stroke();
+    outlined(ctx, theme.props, ppg, theme.props.paper, () => ctx.arc(cx + ppg * 0.12, cy - ppg * 0.1, ppg * 0.11, 0, Math.PI * 2));
+  },
+
+  statue: ({ ctx, ppg, theme }, b) => {
+    const base = inset(b, ppg, 0.12);
+    outlined(ctx, theme.props, ppg, theme.props.stone, () => ctx.rect(base.x, base.y, base.w, base.h));
+    outlined(ctx, theme.props, ppg, theme.props.paper, () => ctx.arc(b.x + b.w / 2, b.y + b.h / 2, ppg * 0.2, 0, Math.PI * 2));
+    ctx.beginPath();
+    ctx.arc(b.x + b.w / 2, b.y + b.h / 2, ppg * 0.08, 0, Math.PI * 2);
+    ctx.stroke();
+  },
+
+  brazier: ({ ctx, ppg, theme }, b) => {
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    glowCircle(ctx, theme.props.glow, cx, cy, ppg * 0.9);
+    outlined(ctx, theme.props, ppg, theme.props.metal, () => ctx.arc(cx, cy, ppg * 0.26, 0, Math.PI * 2));
+    ctx.fillStyle = theme.props.glow;
+    ctx.beginPath();
+    ctx.arc(cx, cy, ppg * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+  },
+
+  console: ({ ctx, ppg, theme }, box) => {
+    const b = inset(box, ppg, box.vertical ? 0.22 : 0.1, box.vertical ? 0.1 : 0.22);
+    outlined(ctx, theme.props, ppg, theme.props.metal, () => roundRect(ctx, b.x, b.y, b.w, b.h, ppg * 0.05));
+    const s = inset(b, ppg, 0.08);
+    ctx.save();
+    ctx.shadowColor = theme.props.glow;
+    ctx.shadowBlur = ppg * 0.25;
+    ctx.fillStyle = theme.props.glow;
+    if (box.vertical) ctx.fillRect(s.x, s.y, s.w, s.h * 0.55);
+    else ctx.fillRect(s.x, s.y, s.w * 0.55, s.h);
+    ctx.restore();
+    ctx.fillStyle = theme.props.line;
+    for (let i = 0; i < 3; i++) {
+      const t = 0.68 + i * 0.1;
+      ctx.beginPath();
+      if (box.vertical) ctx.arc(s.x + s.w / 2, s.y + s.h * t, ppg * 0.035, 0, Math.PI * 2);
+      else ctx.arc(s.x + s.w * t, s.y + s.h / 2, ppg * 0.035, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  },
+
+  coffin: ({ ctx, ppg, theme }, box) => {
+    // The classic six-sided coffin, widest at the shoulders.
+    const v = box.vertical;
+    const len = v ? box.h : box.w;
+    const wid = (v ? box.w : box.h) * 0.62;
+    const ox = box.x + box.w / 2;
+    const oy = box.y + box.h / 2;
+    const pts: [number, number][] = [[-0.46, -0.3], [-0.22, -0.5], [0.46, -0.34], [0.46, 0.34], [-0.22, 0.5], [-0.46, 0.3]];
+    outlined(ctx, theme.props, ppg, theme.props.wood, () => {
+      pts.forEach(([a, c], i) => {
+        const px = v ? ox + c * wid : ox + a * len;
+        const py = v ? oy + a * len : oy + c * wid;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.closePath();
+    });
+    // A cross on the lid, its crossbar toward the head end.
+    const L = ppg * 0.5;
+    const S = ppg * 0.24;
+    const cx = v ? ox : ox - len * 0.04;
+    const cy = v ? oy - len * 0.04 : oy;
+    ctx.beginPath();
+    if (v) {
+      ctx.moveTo(cx, cy - L / 2);
+      ctx.lineTo(cx, cy + L / 2);
+      ctx.moveTo(cx - S / 2, cy - L * 0.2);
+      ctx.lineTo(cx + S / 2, cy - L * 0.2);
+    } else {
+      ctx.moveTo(cx - L / 2, cy);
+      ctx.lineTo(cx + L / 2, cy);
+      ctx.moveTo(cx - L * 0.2, cy - S / 2);
+      ctx.lineTo(cx - L * 0.2, cy + S / 2);
+    }
+    ctx.stroke();
+  },
+
+  pod: ({ ctx, ppg, theme }, box) => {
+    const b = inset(box, ppg, 0.12);
+    outlined(ctx, theme.props, ppg, theme.props.metal, () => roundRect(ctx, b.x, b.y, b.w, b.h, Math.min(b.w, b.h) / 2));
+    const g = inset(b, ppg, 0.1);
+    ctx.save();
+    ctx.globalAlpha = 0.75;
+    ctx.shadowColor = theme.props.glow;
+    ctx.shadowBlur = ppg * 0.2;
+    ctx.fillStyle = theme.props.glow;
+    ctx.beginPath();
+    roundRect(ctx, g.x, g.y, g.w, g.h, Math.min(g.w, g.h) / 2);
+    ctx.fill();
+    ctx.restore();
+  },
+};
+
+function drawProps(p: Paint): void {
+  const { ctx, ppg, d } = p;
+  for (const prop of d.props) {
+    const long = PROP_SPECS[prop.kind].long;
+    const w = long && !prop.vertical ? 2 : 1;
+    const h = long && prop.vertical ? 2 : 1;
+    ctx.save();
+    ctx.lineJoin = 'round';
+    PROP_PAINTERS[prop.kind](p, { x: prop.x * ppg, y: prop.y * ppg, w: w * ppg, h: h * ppg, vertical: prop.vertical }, prop);
+    ctx.restore();
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Labels

@@ -19,6 +19,8 @@ export interface LayoutPreset {
   doorChance: number;
   lockedDoorChance: number;
   secretDoorChance: number;
+  windowChance: number;
+  clutter: number;
 }
 
 export interface Genre {
@@ -56,6 +58,8 @@ export const GENRES: Record<GenreKey, Genre> = {
       doorChance: 0.8,
       lockedDoorChance: 0.15,
       secretDoorChance: 0.1,
+      windowChance: 0.1,
+      clutter: 0.4,
     },
     encounterLabel: "Monster",
     treasureLabel: "Treasure",
@@ -221,6 +225,8 @@ export const GENRES: Record<GenreKey, Genre> = {
       doorChance: 0.95,
       lockedDoorChance: 0.25,
       secretDoorChance: 0.05,
+      windowChance: 0.45,
+      clutter: 0.35,
     },
     encounterLabel: "Hostiles",
     treasureLabel: "Salvage",
@@ -370,6 +376,8 @@ export const GENRES: Record<GenreKey, Genre> = {
       doorChance: 0.85,
       lockedDoorChance: 0.2,
       secretDoorChance: 0.1,
+      windowChance: 0.3,
+      clutter: 0.5,
     },
     encounterLabel: "Encounter",
     treasureLabel: "Loot",
@@ -515,6 +523,8 @@ export const GENRES: Record<GenreKey, Genre> = {
       doorChance: 0.9,
       lockedDoorChance: 0.2,
       secretDoorChance: 0.2,
+      windowChance: 0.35,
+      clutter: 0.45,
     },
     encounterLabel: "Horror",
     treasureLabel: "Relic",
@@ -660,6 +670,8 @@ export const GENRES: Record<GenreKey, Genre> = {
       doorChance: 0.5,
       lockedDoorChance: 0.1,
       secretDoorChance: 0.05,
+      windowChance: 0.25,
+      clutter: 0.6,
     },
     encounterLabel: "Hostiles",
     treasureLabel: "Scavenge",

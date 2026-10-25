@@ -1,12 +1,16 @@
 import { generateDungeon, normalizeOptions, serializeDungeon, deserializeDungeon, doorSummary, DEFAULT_OPTIONS, ROOM } from './generator.ts';
 import type { Dungeon, DungeonOptions, SerializedDungeon } from './generator.ts';
-import { renderDungeon, THEMES, isThemeKey } from './renderer.ts';
-import type { ThemeKey } from './renderer.ts';
+import { renderDungeon, LOOKS, isLook, resolveTheme } from './renderer.ts';
+import type { Look, RenderOptions } from './renderer.ts';
 import { EXPORTERS, getExporter, createExportTarget } from './export/index.ts';
 import type { ExportContext, ExportStrategy, RenderRequest } from './export/index.ts';
 import { html, slugify } from './text.ts';
 import type { SafeHtml } from './text.ts';
 import { randomSeed } from './rng.ts';
+import { clearMap, createBlankDungeon, stockNewRoom } from './editor.ts';
+import { MapEditor, TOOLS } from './editor-ui.ts';
+import { PROP_KINDS, PROP_LABELS, settingProps } from './clutter.ts';
+import type { PropKind } from './clutter.ts';
 import { GENRES, GENRE_KEYS, getGenre, isGenreKey } from './genres.ts';
 import type { DungeonForgeApi, MenuAction } from '../shared/ipc.ts';
 
@@ -36,7 +40,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 interface StyleOptions {
-  theme: ThemeKey;
+  look: Look;
   showGrid: boolean;
   showLabels: boolean;
 }
@@ -66,7 +70,7 @@ const state: {
   exportFormat: string;
 } = {
   options: { ...DEFAULT_OPTIONS, seed: randomSeed() },
-  style: { theme: 'parchment', showGrid: true, showLabels: true },
+  style: { look: 'setting', showGrid: true, showLabels: true },
   gmView: true,
   dungeon: null,
   mapCanvas: document.createElement('canvas'),
@@ -108,7 +112,14 @@ interface CheckItem {
   key: string;
   label: string;
 }
-type ControlItem = SelectItem | RangeItem | CheckItem;
+/** A row of buttons, one per option; for short choices that are easier to see than a dropdown. */
+interface SegmentedItem {
+  type: 'segmented';
+  key: string;
+  label: string;
+  options: readonly [value: string, label: string][];
+}
+type ControlItem = SelectItem | RangeItem | CheckItem | SegmentedItem;
 
 interface Section {
   title: string;
@@ -147,10 +158,11 @@ const CONTROLS: Section[] = [
       { key: 'roomMax', type: 'range', label: 'Max room size', min: 4, max: 20, step: 1 },
       { key: 'roundRoomChance', type: 'range', label: 'Round rooms', min: 0, max: 1, step: 0.05, fmt: pct },
       { key: 'pillarChance', type: 'range', label: 'Pillared halls', min: 0, max: 1, step: 0.05, fmt: pct },
+      { key: 'clutter', type: 'range', label: 'Clutter', min: 0, max: 1, step: 0.05, fmt: pct },
     ],
   },
   {
-    title: 'Corridors & doors',
+    title: 'Corridors, doors & windows',
     show: isRooms,
     items: [
       { key: 'corridorStyle', type: 'select', label: 'Corridors', options: [['straight', 'Straight'], ['winding', 'Winding']] },
@@ -158,6 +170,7 @@ const CONTROLS: Section[] = [
       { key: 'doorChance', type: 'range', label: 'Doors on entrances', min: 0, max: 1, step: 0.05, fmt: pct },
       { key: 'lockedDoorChance', type: 'range', label: 'Locked doors', min: 0, max: 0.6, step: 0.05, fmt: pct },
       { key: 'secretDoorChance', type: 'range', label: 'Secret doors', min: 0, max: 0.4, step: 0.05, fmt: pct },
+      { key: 'windowChance', type: 'range', label: 'Windows', min: 0, max: 1, step: 0.05, fmt: pct },
     ],
   },
   {
@@ -167,13 +180,14 @@ const CONTROLS: Section[] = [
       { key: 'roomCount', type: 'range', label: 'Keyed areas (max)', min: 1, max: 40, step: 1 },
       { key: 'caveFill', type: 'range', label: 'Rock density', min: 0.35, max: 0.55, step: 0.01, fmt: pct },
       { key: 'caveSteps', type: 'range', label: 'Smoothing passes', min: 1, max: 8, step: 1 },
+      { key: 'clutter', type: 'range', label: 'Clutter', min: 0, max: 1, step: 0.05, fmt: pct },
     ],
   },
   {
     title: 'Style',
     style: true,
     items: [
-      { key: 'theme', type: 'select', label: 'Theme', options: Object.entries(THEMES).map(([k, t]) => [k, t.label]) },
+      { key: 'look', type: 'segmented', label: 'Look', options: LOOKS },
       { key: 'showGrid', type: 'check', label: 'Show grid' },
       { key: 'showLabels', type: 'check', label: 'Room numbers (GM view)' },
     ],
@@ -182,9 +196,9 @@ const CONTROLS: Section[] = [
 
 interface BoundControl {
   item: ControlItem;
-  input: HTMLInputElement | HTMLSelectElement;
   section: Section;
-  valueNode: HTMLElement | null;
+  /** Shows a value from the state in the control. */
+  show(value: unknown): void;
 }
 
 const controlInputs: BoundControl[] = [];
@@ -194,6 +208,65 @@ const sectionNodes = new Map<Section, HTMLElement>();
 const targetOf = (section: Section): Record<string, unknown> =>
   (section.style ? state.style : state.options) as unknown as Record<string, unknown>;
 
+/** Stores a control's new value, then redraws (style) or regenerates (everything else). */
+function controlChanged(section: Section, item: ControlItem, value: unknown): void {
+  targetOf(section)[item.key] = value;
+  if (item.type === 'select') item.onChange?.(String(value));
+  syncControls();
+  if (section.style) redrawMap();
+  else scheduleGenerate();
+}
+
+function buildControl(section: Section, item: ControlItem): { node: HTMLElement; control: BoundControl } {
+  const bind = (show: BoundControl['show']): BoundControl => ({ item, section, show });
+  switch (item.type) {
+    case 'select': {
+      const select = el('select');
+      for (const [value, label] of item.options) select.append(el('option', { value, textContent: label }));
+      select.addEventListener('input', () => controlChanged(section, item, select.value));
+      const node = el('div', { className: 'control' }, el('label', { textContent: item.label }), select);
+      return { node, control: bind((v) => (select.value = String(v))) };
+    }
+    case 'check': {
+      const box = el('input', { type: 'checkbox' });
+      box.addEventListener('input', () => controlChanged(section, item, box.checked));
+      const node = el('div', { className: 'control check' }, el('label', {}, box, item.label));
+      return { node, control: bind((v) => (box.checked = Boolean(v))) };
+    }
+    case 'segmented': {
+      const group = el('div', { className: 'segmented' });
+      group.setAttribute('role', 'group');
+      group.setAttribute('aria-label', item.label);
+      for (const [value, label] of item.options) {
+        const b = el('button', { textContent: label, type: 'button' });
+        b.dataset.value = value;
+        b.addEventListener('click', () => controlChanged(section, item, value));
+        group.append(b);
+      }
+      const node = el('div', { className: 'control' }, el('label', { textContent: item.label }), group);
+      const show = (v: unknown): void => {
+        for (const b of group.children) {
+          const on = (b as HTMLElement).dataset.value === v;
+          b.classList.toggle('active', on);
+          b.setAttribute('aria-pressed', String(on));
+        }
+      };
+      return { node, control: bind(show) };
+    }
+    case 'range': {
+      const range = el('input', { type: 'range', min: String(item.min), max: String(item.max), step: String(item.step) });
+      const value = el('span', { className: 'value' });
+      range.addEventListener('input', () => controlChanged(section, item, Number(range.value)));
+      const node = el('div', { className: 'control' }, el('label', {}, el('span', { textContent: item.label }), value), range);
+      const show = (v: unknown): void => {
+        range.value = String(v);
+        value.textContent = item.fmt ? item.fmt(Number(v)) : String(v);
+      };
+      return { node, control: bind(show) };
+    }
+  }
+}
+
 function buildControls(): void {
   const root = $('controls');
   for (const section of CONTROLS) {
@@ -201,48 +274,16 @@ function buildControls(): void {
     sectionNodes.set(section, box);
     box.append(el('h3', { textContent: section.title }));
     for (const item of section.items) {
-      const wrap = el('div', { className: `control${item.type === 'check' ? ' check' : ''}` });
-      let input: HTMLInputElement | HTMLSelectElement;
-      let valueNode: HTMLElement | null = null;
-      if (item.type === 'select') {
-        const select = el('select');
-        for (const [value, label] of item.options) select.append(el('option', { value, textContent: label }));
-        wrap.append(el('label', { textContent: item.label }), select);
-        input = select;
-      } else if (item.type === 'check') {
-        input = el('input', { type: 'checkbox' });
-        wrap.append(el('label', {}, input, item.label));
-      } else {
-        input = el('input', { type: 'range', min: String(item.min), max: String(item.max), step: String(item.step) });
-        valueNode = el('span', { className: 'value' });
-        wrap.append(el('label', {}, el('span', { textContent: item.label }), valueNode), input);
-      }
-      const read = (): unknown => {
-        if (item.type === 'check') return (input as HTMLInputElement).checked;
-        if (item.type === 'range') return Number(input.value);
-        return input.value;
-      };
-      input.addEventListener('input', () => {
-        targetOf(section)[item.key] = read();
-        if (item.type === 'select') item.onChange?.(input.value);
-        syncControls();
-        if (section.style) redrawMap();
-        else scheduleGenerate();
-      });
-      controlInputs.push({ item, input, section, valueNode });
-      box.append(wrap);
+      const { node, control } = buildControl(section, item);
+      controlInputs.push(control);
+      box.append(node);
     }
     root.append(box);
   }
 }
 
 function syncControls(): void {
-  for (const { item, input, section, valueNode } of controlInputs) {
-    const v = targetOf(section)[item.key];
-    if (item.type === 'check') (input as HTMLInputElement).checked = Boolean(v);
-    else input.value = String(v);
-    if (valueNode) valueNode.textContent = item.type === 'range' && item.fmt ? item.fmt(Number(v)) : String(v);
-  }
+  for (const { item, section, show } of controlInputs) show(targetOf(section)[item.key]);
   for (const section of CONTROLS) {
     const node = sectionNodes.get(section);
     if (node) node.hidden = section.show ? !section.show(state.options) : false;
@@ -252,13 +293,20 @@ function syncControls(): void {
   $('view-player').classList.toggle('active', !state.gmView);
 }
 
-// Picking a setting also switches to its art theme and nudges the layout sliders to suit it.
+/** Render settings for the current map: the theme follows its setting unless a look overrides it. */
+function renderStyle(d: Dungeon): RenderOptions {
+  return {
+    theme: resolveTheme(state.style.look, getGenre(d.options.genre).theme),
+    showGrid: state.style.showGrid,
+    showLabels: state.style.showLabels,
+  };
+}
+
+// Picking a setting nudges the layout sliders to suit it (its art follows via the Look).
 // Width, height, room counts and sizes are left alone.
 function applyGenre(value: string): void {
   if (!isGenreKey(value)) return;
-  const g = GENRES[value];
-  Object.assign(state.options, g.preset);
-  state.style.theme = g.theme;
+  Object.assign(state.options, GENRES[value].preset);
 }
 
 let generatePending = false;
@@ -275,7 +323,19 @@ function scheduleGenerate(): void {
 // ---------------------------------------------------------------------------
 // Generation and drawing
 
+/** True if it's fine to replace the current map: it has no hand edits, or the user agreed to lose them. */
+function confirmDiscard(): boolean {
+  return !state.dungeon?.edited || window.confirm('This map has hand edits that will be lost. Continue?');
+}
+
 function generate({ fit = false }: { fit?: boolean } = {}): void {
+  if (!confirmDiscard()) {
+    // Put the controls back to match the map that's staying.
+    state.options = { ...dungeon().options };
+    syncControls();
+    return;
+  }
+  editor.reset();
   // Keep min/max sliders consistent with each other.
   if (state.options.roomMin > state.options.roomMax) state.options.roomMax = state.options.roomMin;
   const t0 = performance.now();
@@ -291,7 +351,7 @@ function generate({ fit = false }: { fit?: boolean } = {}): void {
 
 function redrawMap(): void {
   if (!state.dungeon) return;
-  renderDungeon(state.mapCanvas, state.dungeon, { ...state.style, ppg: VIEW_PPG, gmView: state.gmView });
+  renderDungeon(state.mapCanvas, state.dungeon, { ...renderStyle(state.dungeon), ppg: VIEW_PPG, gmView: state.gmView });
   drawView();
 }
 
@@ -320,6 +380,7 @@ function drawView(): void {
   ctx.drawImage(state.mapCanvas, 0, 0);
   ctx.shadowBlur = 0;
   if (state.selected >= 0) drawSelection(ctx, state.dungeon);
+  editor.drawOverlay(ctx, VIEW_PPG);
 }
 
 function drawSelection(ctx: CanvasRenderingContext2D, d: Dungeon): void {
@@ -351,8 +412,8 @@ function updateStatus(ms?: number): void {
     getGenre(d.options.genre).label,
     `${d.width} × ${d.height} squares (${d.width * 5} × ${d.height * 5} ft)`,
     `${d.rooms.length} ${d.algorithm === 'caves' ? 'areas' : 'rooms'}`,
-    `${doors.total} doors · ${doors.locked} locked · ${doors.secret} secret`,
-    `seed "${d.seed}"`,
+    `${doors.total} doors · ${doors.locked} locked · ${doors.secret} secret · ${d.windows.length} windows`,
+    d.edited ? `seed "${d.seed}" (hand-edited)` : `seed "${d.seed}"`,
   ];
   if (ms != null) parts.push(`${Math.round(ms)} ms`);
   $('status').textContent = parts.join('   ·   ');
@@ -366,6 +427,9 @@ function renderKey(): void {
   root.replaceChildren();
   const g = getGenre(dungeon().options.genre);
   const kindLabel: Record<string, string> = { monster: g.encounterLabel, trap: 'trap', special: 'special', empty: 'empty' };
+  if (dungeon().rooms.length === 0) {
+    root.append(el('p', { className: 'key-empty', textContent: 'No rooms yet. Open Edit map and drag with the Room tool to draw one.' }));
+  }
   for (const r of dungeon().rooms) {
     const c = r.contents;
     if (!c) continue;
@@ -412,13 +476,36 @@ function selectRoom(id: number, { center = false }: { center?: boolean } = {}): 
 // Pan / zoom / click
 
 let drag: { x: number; y: number; ox: number; oy: number; moved: boolean } | null = null;
+/** Holding Space pans with the left button while editing. */
+let spaceHeld = false;
+
+function toGrid(e: MouseEvent): { fx: number; fy: number } {
+  const rect = viewport.getBoundingClientRect();
+  return {
+    fx: (e.clientX - rect.left - state.view.ox) / state.view.scale / VIEW_PPG,
+    fy: (e.clientY - rect.top - state.view.oy) / state.view.scale / VIEW_PPG,
+  };
+}
 
 viewport.addEventListener('pointerdown', (e) => {
-  drag = { x: e.clientX, y: e.clientY, ox: state.view.ox, oy: state.view.oy, moved: false };
+  // Ignore clicks on the edit toolbar floating over the map.
+  if (e.target !== viewCanvas) return;
   viewport.setPointerCapture(e.pointerId);
+  if (editor.active && e.button === 0 && !spaceHeld) {
+    editor.pointerDown(e);
+    return;
+  }
+  drag = { x: e.clientX, y: e.clientY, ox: state.view.ox, oy: state.view.oy, moved: false };
 });
 viewport.addEventListener('pointermove', (e) => {
-  if (!drag) return;
+  if (editor.dragging) {
+    editor.pointerMove(e);
+    return;
+  }
+  if (!drag) {
+    if (editor.active && e.target === viewCanvas) editor.pointerMove(e);
+    return;
+  }
   const dx = e.clientX - drag.x;
   const dy = e.clientY - drag.y;
   if (Math.abs(dx) + Math.abs(dy) > 3) {
@@ -430,10 +517,19 @@ viewport.addEventListener('pointermove', (e) => {
   drawView();
 });
 viewport.addEventListener('pointerup', (e) => {
+  if (editor.dragging) {
+    editor.pointerUp();
+    return;
+  }
   viewport.classList.remove('dragging');
-  if (drag && !drag.moved) handleClick(e);
+  if (drag && !drag.moved && !editor.active) handleClick(e);
   drag = null;
 });
+viewport.addEventListener('pointerleave', () => {
+  if (editor.active) editor.pointerLeave();
+});
+// Right-drag pans in edit mode, so keep the context menu out of the way.
+viewport.addEventListener('contextmenu', (e) => e.preventDefault());
 viewport.addEventListener('wheel', (e) => {
   e.preventDefault();
   const rect = viewport.getBoundingClientRect();
@@ -448,13 +544,109 @@ viewport.addEventListener('wheel', (e) => {
 
 function handleClick(e: PointerEvent): void {
   const d = dungeon();
-  const rect = viewport.getBoundingClientRect();
-  const x = Math.floor((e.clientX - rect.left - state.view.ox) / state.view.scale / VIEW_PPG);
-  const y = Math.floor((e.clientY - rect.top - state.view.oy) / state.view.scale / VIEW_PPG);
+  const { fx, fy } = toGrid(e);
+  const x = Math.floor(fx);
+  const y = Math.floor(fy);
   let id = -1;
   if (x >= 0 && y >= 0 && x < d.width && y < d.height) id = d.roomIds[y * d.width + x] ?? -1;
   if (id >= 0) selectRoom(id);
   else if (state.selected >= 0) selectRoom(state.selected); // toggles off
+}
+
+// ---------------------------------------------------------------------------
+// Edit mode
+
+const editor = new MapEditor({
+  dungeon,
+  toGrid,
+  changed: () => {
+    state.selected = -1;
+    redrawMap();
+    renderKey();
+    updateStatus();
+    syncEditBar();
+  },
+  redrawOverlay: () => drawView(),
+  newRoomContents: (d) => stockNewRoom(d),
+});
+
+const toolSelect = $<HTMLSelectElement>('edit-tool');
+const propSelect = $<HTMLSelectElement>('edit-prop');
+
+function buildEditBar(): void {
+  for (const tool of TOOLS) {
+    toolSelect.append(el('option', { value: tool.id, textContent: `${tool.label} (${tool.key.toUpperCase()})` }));
+  }
+  toolSelect.addEventListener('change', () => {
+    const tool = TOOLS.find((t) => t.id === toolSelect.value);
+    if (tool) editor.setTool(tool.id);
+    syncEditBar();
+    toolSelect.blur(); // so tool keys and Space work straight away
+  });
+  propSelect.addEventListener('change', () => {
+    editor.propKind = propSelect.value as PropKind;
+    propSelect.blur();
+    drawView();
+  });
+}
+
+/** Prop choices, the current setting's own props first. Rebuilt when the setting changes. */
+let propOptionsGenre = '';
+function fillPropOptions(): void {
+  const genre = dungeon().options.genre;
+  if (genre === propOptionsGenre) return;
+  propOptionsGenre = genre;
+  const own = settingProps(genre);
+  const group = (label: string, kinds: PropKind[]): HTMLOptGroupElement => {
+    const g = el('optgroup', { label });
+    for (const k of kinds) g.append(el('option', { value: k, textContent: PROP_LABELS[k] }));
+    return g;
+  };
+  propSelect.replaceChildren(
+    group(`${getGenre(genre).label} props`, own),
+    group('Other props', PROP_KINDS.filter((k) => !own.includes(k))),
+  );
+}
+
+function syncEditBar(): void {
+  toolSelect.value = editor.tool;
+  const clutter = editor.tool === 'clutter';
+  $('edit-prop-field').hidden = !clutter;
+  if (clutter) {
+    fillPropOptions();
+    propSelect.value = editor.propKind;
+  }
+  const tool = TOOLS.find((t) => t.id === editor.tool);
+  $('edit-hint').textContent = `${tool?.hint ?? ''} Right-drag or hold Space to pan.`;
+  $<HTMLButtonElement>('btn-undo').disabled = !editor.canUndo;
+  $<HTMLButtonElement>('btn-redo').disabled = !editor.canRedo;
+}
+
+function setEditing(on: boolean): void {
+  editor.active = on;
+  if (!on) editor.cancelDrag();
+  state.selected = -1;
+  viewport.classList.toggle('editing', on);
+  $('editbar').hidden = !on;
+  $('btn-edit').classList.toggle('active', on);
+  syncEditBar();
+  renderKey();
+  drawView();
+}
+
+/** Starts a fresh all-rock map at the current size and opens edit mode. */
+function blankMap(): void {
+  if (!confirmDiscard()) return;
+  state.dungeon = createBlankDungeon(state.options);
+  state.options = { ...state.dungeon.options };
+  state.selected = -1;
+  editor.reset();
+  syncControls();
+  redrawMap();
+  renderKey();
+  updateStatus();
+  fitView();
+  setEditing(true);
 }
 
 new ResizeObserver(() => drawView()).observe(viewport);
@@ -476,6 +668,7 @@ async function saveMap(): Promise<void> {
 }
 
 async function openMap(): Promise<void> {
+  if (!confirmDiscard()) return;
   const file = await window.api.openFile({ title: 'Open map', filters: [{ name: 'Dungeon Forge map', extensions: ['json'] }] });
   if (!file) return;
   try {
@@ -483,10 +676,13 @@ async function openMap(): Promise<void> {
     if (project.app !== 'dungeon-forge') throw new Error('This file was not saved by Dungeon Forge');
     const d = deserializeDungeon(project.dungeon);
     state.dungeon = d;
+    editor.reset();
     state.options = normalizeOptions(d.options);
-    const style = project.style;
+    // Maps saved before the Look switch stored a theme name instead.
+    const style = project.style as Partial<StyleOptions> & { theme?: string } | undefined;
+    const legacyLook = style?.theme === 'blueprint' || style?.theme === 'stone' ? style.theme : 'setting';
     state.style = {
-      theme: isThemeKey(style?.theme) ? style.theme : state.style.theme,
+      look: isLook(style?.look) ? style.look : legacyLook,
       showGrid: style?.showGrid ?? state.style.showGrid,
       showLabels: style?.showLabels ?? state.style.showLabels,
     };
@@ -571,7 +767,7 @@ function createExportContext(): ExportContext {
   const ppg = exportPpg();
   const grid = exportGrid.checked;
   const gmView = exportView.value === 'gm';
-  const style = { ...state.style };
+  const style = renderStyle(d);
   return {
     dungeon: d,
     ppg,
@@ -657,11 +853,13 @@ const guard = (fn: () => Promise<void>) => (): void => {
 
 const actions: Record<MenuAction, () => void> = {
   new: newDungeon,
+  blank: blankMap,
   regenerate: () => generate(),
   open: guard(openMap),
   save: guard(saveMap),
   export: openExport,
   'toggle-gm': () => setGmView(!state.gmView),
+  'toggle-edit': () => setEditing(!editor.active),
   fit: fitView,
 };
 
@@ -671,6 +869,13 @@ $('btn-fit').addEventListener('click', actions.fit);
 $('btn-open').addEventListener('click', actions.open);
 $('btn-save').addEventListener('click', actions.save);
 $('btn-export').addEventListener('click', actions.export);
+$('btn-edit').addEventListener('click', actions['toggle-edit']);
+$('btn-edit-done').addEventListener('click', () => setEditing(false));
+$('btn-undo').addEventListener('click', () => editor.undo());
+$('btn-redo').addEventListener('click', () => editor.redo());
+$('btn-clear').addEventListener('click', () => {
+  if (window.confirm('Clear the whole map back to solid rock? You can undo this.')) editor.apply(clearMap);
+});
 $('view-gm').addEventListener('click', () => setGmView(true));
 $('view-player').addEventListener('click', () => setGmView(false));
 const seedInput = $<HTMLInputElement>('seed');
@@ -690,11 +895,44 @@ for (const id of ['export-modal', 'info-modal']) {
 }
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (editor.dragging) editor.cancelDrag();
     $('export-modal').hidden = true;
     $('info-modal').hidden = true;
+    return;
+  }
+  const t = e.target;
+  const typing = t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement;
+  if (typing || !editor.active || !$('export-modal').hidden) return;
+  const mod = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+  if (mod && key === 'z') {
+    e.preventDefault();
+    if (e.shiftKey) editor.redo();
+    else editor.undo();
+  } else if (mod && key === 'y') {
+    e.preventDefault();
+    editor.redo();
+  } else if (e.key === ' ') {
+    e.preventDefault();
+    (document.activeElement as HTMLElement | null)?.blur();
+    spaceHeld = true;
+    viewport.classList.add('panning');
+  } else if (!mod && !e.altKey) {
+    const tool = TOOLS.find((x) => x.key === key);
+    if (tool) {
+      editor.setTool(tool.id);
+      syncEditBar();
+    }
+  }
+});
+document.addEventListener('keyup', (e) => {
+  if (e.key === ' ') {
+    spaceHeld = false;
+    viewport.classList.remove('panning');
   }
 });
 window.api.onMenu((action) => actions[action]?.());
 
 buildControls();
+buildEditBar();
 generate({ fit: true });

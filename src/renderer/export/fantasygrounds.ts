@@ -48,7 +48,8 @@ export interface FguOccluder {
 export function buildFguOccluders(d: Dungeon, ppg: number): FguOccluder[] {
   const map = fguPointMapper(d, ppg);
   const out: FguOccluder[] = [];
-  for (const s of computeWalls(d)) {
+  // Windows get their own occluders below, so the walls are split around them.
+  for (const s of computeWalls(d, d.windows)) {
     out.push({ points: [map({ x: s.x1, y: s.y1 }), map({ x: s.x2, y: s.y2 })], flags: [] });
   }
   for (const poly of computePillarOutlines(d)) {
@@ -57,11 +58,17 @@ export function buildFguOccluders(d: Dungeon, ppg: number): FguOccluder[] {
   // Doors are thin rectangles straddling the doorway, flagged so FGU makes them openable.
   // FGU's secret-door option has no documented XML flag, so secret doors export as ordinary doors.
   const t = DOOR_HALF_THICKNESS;
+  const rect = (e: { x1: number; y1: number; x2: number; y2: number }): [number, number][] =>
+    (e.y1 === e.y2
+      ? [{ x: e.x1, y: e.y1 - t }, { x: e.x2, y: e.y1 - t }, { x: e.x2, y: e.y1 + t }, { x: e.x1, y: e.y1 + t }]
+      : [{ x: e.x1 - t, y: e.y1 }, { x: e.x1 - t, y: e.y2 }, { x: e.x1 + t, y: e.y2 }, { x: e.x1 + t, y: e.y1 }]
+    ).map(map);
   for (const door of d.doors) {
-    const rect: Point[] = door.y1 === door.y2
-      ? [{ x: door.x1, y: door.y1 - t }, { x: door.x2, y: door.y1 - t }, { x: door.x2, y: door.y1 + t }, { x: door.x1, y: door.y1 + t }]
-      : [{ x: door.x1 - t, y: door.y1 }, { x: door.x1 - t, y: door.y2 }, { x: door.x1 + t, y: door.y2 }, { x: door.x1 + t, y: door.y1 }];
-    out.push({ points: rect.map(map), flags: ['toggleable', 'closed', 'single_sided', 'counterclockwise'] });
+    out.push({ points: rect(door), flags: ['toggleable', 'closed', 'single_sided', 'counterclockwise'] });
+  }
+  // Same flags as uvtt2fgu's documented window example: blocks movement, lets vision through.
+  for (const w of d.windows) {
+    out.push({ points: rect(w), flags: ['toggleable', 'closed', 'allow_vision'] });
   }
   return out;
 }
@@ -121,6 +128,8 @@ export function buildFguModule(d: Dungeon, ppg: number, mapPng: Uint8Array, thum
 /** "Room 3, east wall, column 14 row 7" for a door, using 1-based squares on the room's side. */
 export function describeDoor(d: Dungeon, door: Door): string {
   const horiz = door.y1 === door.y2;
+  // Hand-drawn doors can sit between two corridor squares.
+  if (door.room < 0) return `Corridor, column ${door.x1 + 1} row ${door.y1 + 1}`;
   const a = horiz ? { x: door.x1, y: door.y1 - 1 } : { x: door.x1 - 1, y: door.y1 };
   const b = { x: door.x1, y: door.y1 };
   const roomIsA = d.roomIds[a.y * d.width + a.x] === door.room;
@@ -141,7 +150,7 @@ export function buildFguNotes(d: Dungeon, ppg: number, moduleFile: string): stri
     '',
     `Module: ${moduleFile}`,
     `Map: ${d.width} × ${d.height} squares, ${d.width * ppg} × ${d.height * ppg} px at ${ppg} px per square.`,
-    'The module contains the map image plus its line-of-sight data (walls, pillars and doors) and grid size.',
+    'The module contains the map image plus its line-of-sight data (walls, pillars, doors and windows) and grid size.',
     '',
     '1. Copy the .mod file into the "modules" folder of your Fantasy Grounds data directory.',
     '2. Open your campaign, open the Modules list in the Library, and load the module.',

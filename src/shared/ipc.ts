@@ -28,7 +28,7 @@ export interface OpenedFile {
   text: string;
 }
 
-export type MenuAction = 'new' | 'regenerate' | 'open' | 'save' | 'export' | 'toggle-gm' | 'fit';
+export type MenuAction = 'new' | 'blank' | 'regenerate' | 'open' | 'save' | 'export' | 'toggle-gm' | 'toggle-edit' | 'fit';
 
 /** The API the preload script exposes on `window.api`. */
 export interface DungeonForgeApi {

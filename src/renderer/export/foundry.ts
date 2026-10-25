@@ -14,7 +14,15 @@ export interface FoundryWall {
   door: 0 | 1 | 2;
   /** 0 = closed, 2 = locked. */
   ds: 0 | 2;
+  /** Restrictions (CONST.WALL_SENSE_TYPES: 0 none, 10 limited, 20 normal). Omitted means normal. */
+  move?: number;
+  sight?: number;
+  light?: number;
+  sound?: number;
 }
+
+/** A clear window: blocks movement, lets sight and light through, muffles sound. */
+const WINDOW_RESTRICTIONS = { move: 20, sight: 0, light: 0, sound: 10 } as const;
 
 export interface FoundryScene {
   name: string;
@@ -48,7 +56,8 @@ export function buildFoundryScene(d: Dungeon, ppg: number, imageSrc: string, nam
     ds,
   });
   const walls: FoundryWall[] = [
-    ...computeWalls(d).map((s) => wall({ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 })),
+    ...computeWalls(d, d.windows).map((s) => wall({ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 })),
+    ...d.windows.map((w) => ({ ...wall({ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }), ...WINDOW_RESTRICTIONS })),
     ...computePillarOutlines(d).flatMap((poly) => poly.slice(1).map((p, i) => wall(poly[i] as Point, p))),
     ...d.doors.map((o) =>
       wall({ x: o.x1, y: o.y1 }, { x: o.x2, y: o.y2 }, o.type === 'secret' ? 2 : 1, o.type === 'locked' ? 2 : 0),
