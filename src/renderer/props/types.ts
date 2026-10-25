@@ -27,6 +27,10 @@ export interface PropPaintContext {
   palette: PropPalette;
   /** For small variations (book colours, rubble); seeded, so a map always renders the same. */
   rng: RNG;
+  /** Depth effect strength, 0–1; when above 0, outlined shapes get a lit top-left and shaded bottom-right. */
+  depth?: number;
+  /** The prop's footprint, which the depth highlight spans. */
+  bounds?: PropBox;
 }
 
 /** A prop's footprint in pixels: one square, or two for long props. */
@@ -40,5 +44,9 @@ export interface PropBox {
 
 export interface PropRenderer {
   readonly kind: PropKind;
+  /** How tall the prop stands, for its shadow: 0 lies flat, 1 is crate height. */
+  readonly height: number;
+  /** Casts a round shadow rather than a square one. */
+  readonly round: boolean;
   draw(c: PropPaintContext, box: PropBox): void;
 }

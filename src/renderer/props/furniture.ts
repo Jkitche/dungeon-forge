@@ -5,6 +5,8 @@ import type { PropBox, PropPaintContext, PropRenderer } from './types.ts';
 
 export class TableRenderer implements PropRenderer {
   readonly kind = 'table';
+  readonly height = 0.8;
+  readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette } = c;
@@ -25,6 +27,8 @@ export class TableRenderer implements PropRenderer {
 
 export class BedRenderer implements PropRenderer {
   readonly kind = 'bed';
+  readonly height = 0.5;
+  readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette } = c;
@@ -40,6 +44,8 @@ export class BedRenderer implements PropRenderer {
 
 export class ShelfRenderer implements PropRenderer {
   readonly kind = 'shelf';
+  readonly height = 1.6;
+  readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette, rng } = c;
@@ -60,6 +66,8 @@ export class ShelfRenderer implements PropRenderer {
 
 export class RugRenderer implements PropRenderer {
   readonly kind = 'rug';
+  readonly height = 0;
+  readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette } = c;

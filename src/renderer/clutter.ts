@@ -92,7 +92,7 @@ export function propPool(genre: GenreKey, roomName: string, cave: boolean): Prop
   const name = roomName.toLowerCase();
   for (const [pattern, kinds] of ROOM_HINTS) {
     if (!pattern.test(name)) continue;
-    for (const k of kinds) if (k in weights) weights[k] = (weights[k] ?? 0) + HINT_WEIGHT;
+    for (const k of kinds) if (Object.hasOwn(weights, k)) weights[k] = (weights[k] ?? 0) + HINT_WEIGHT;
   }
   const pool: PropKind[] = [];
   for (const [k, w] of Object.entries(weights) as [PropKind, number][]) {

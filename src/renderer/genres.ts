@@ -810,7 +810,7 @@ export const GENRES: Record<GenreKey, Genre> = {
 export const GENRE_KEYS = Object.keys(GENRES) as GenreKey[];
 
 export const isGenreKey = (k: unknown): k is GenreKey =>
-  typeof k === "string" && k in GENRES;
+  typeof k === "string" && Object.hasOwn(GENRES, k);
 
 export function getGenre(key: unknown): Genre {
   return GENRES[isGenreKey(key) ? key : "fantasy"];

@@ -7,11 +7,13 @@
 import { RNG } from './rng.ts';
 import { isFloor, isOpen, ROCK, ROOM, CORRIDOR, PILLAR, DIRS } from './generator.ts';
 import type { Dungeon, Door } from './generator.ts';
-import { computeWalls, PILLAR_RADIUS } from './walls.ts';
+import { computeWalls, eachWallUnit, PILLAR_RADIUS } from './walls.ts';
 import { PROP_SPECS } from './clutter.ts';
 import { PROP_RENDERERS } from './props/index.ts';
 import type { PropPaintContext, PropPalette } from './props/index.ts';
-import { blob } from './props/draw.ts';
+import { blob, bevel } from './props/draw.ts';
+import { castShadow, depthAmount, drawAmbientOcclusion, drawLighting, drawPropShadows, drawWallBevel, lightSources } from './depth.ts';
+import type { DepthLevel } from './depth.ts';
 
 type RGB = readonly [number, number, number];
 
@@ -166,7 +168,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
   },
 };
 
-export const isThemeKey = (k: unknown): k is ThemeKey => typeof k === 'string' && k in THEMES;
+export const isThemeKey = (k: unknown): k is ThemeKey => typeof k === 'string' && Object.hasOwn(THEMES, k);
 
 /**
  * The user's choice of art: the theme that matches the map's setting, or one of the two
@@ -189,6 +191,10 @@ export interface RenderOptions {
   showLabels?: boolean;
   /** Show room numbers and mark secret doors; the player view hides both. */
   gmView?: boolean;
+  /** Raised walls, directional shadows, ambient occlusion and highlights. Default off. */
+  depth?: DepthLevel;
+  /** Dim the floor and add pools of light around braziers, screens and cryo pods. Default off. */
+  lighting?: boolean;
 }
 
 type Ctx = CanvasRenderingContext2D;
@@ -201,6 +207,10 @@ interface Paint {
   theme: Theme;
   rng: RNG;
   gm: boolean;
+  /** Depth effect strength, 0 (off) to 1. */
+  depth: number;
+  /** How dark depth shadows get: full on dark themes, softer on pale ones. */
+  shade: number;
 }
 
 /** Draw the dungeon into `canvas`, resizing it to fit. */
@@ -212,7 +222,10 @@ export function renderDungeon(canvas: HTMLCanvasElement, d: Dungeon, opts: Rende
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas 2D context unavailable');
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  const p: Paint = { ctx, d, ppg, theme, rng: new RNG(`${d.seed}:art`), gm: opts.gmView ?? true };
+  const p: Paint = {
+    ctx, d, ppg, theme, rng: new RNG(`${d.seed}:art`), gm: opts.gmView ?? true,
+    depth: depthAmount(opts.depth), shade: theme.shadow ? 1 : 0.55,
+  };
   const decor = theme.decor ?? [];
   const runDecor = (phase: DecorPhase): void => {
     for (const k of decor) if (DECOR[k].phase === phase) DECOR[k].paint(p);
@@ -231,10 +244,21 @@ export function renderDungeon(canvas: HTMLCanvasElement, d: Dungeon, opts: Rende
   FLOOR_PAINTERS[theme.floorStyle](p);
   runDecor('floor');
   if (opts.showGrid ?? true) drawGridLines(p, theme.grid);
+  if (p.depth > 0) drawAmbientOcclusion(ctx, d, ppg, p.depth, p.shade);
   ctx.restore();
 
   for (const s of d.stairs) STAIR_PAINTERS[theme.stairStyle](p, s.x, s.y, s.dir, s.kind);
+  if (p.depth > 0) drawPropShadows(ctx, d.props, PROP_RENDERERS, ppg, p.depth, p.shade);
   drawProps(p);
+  const lights = opts.lighting ? lightSources(d, theme.props) : [];
+  if (lights.length > 0) {
+    // Light and shade fall on the floor and what stands on it; walls and labels stay crisp.
+    // A map with no light sources is left as it is: dimming it would only muddy it.
+    ctx.save();
+    ctx.clip(floorPath);
+    drawLighting(ctx, lights, ppg, canvas.width, canvas.height, theme.shadow ? 0.42 : 0.14);
+    ctx.restore();
+  }
   runDecor('beforeWalls');
   drawWalls(p);
   for (let c = 0; c < d.cells.length; c++) {
@@ -588,13 +612,19 @@ function drawWalls(p: Paint): void {
   };
   ctx.save();
   ctx.lineCap = 'square';
-  if (theme.shadow) {
+  if (p.depth > 0) {
+    castShadow(ctx, ppg, p.depth, 1.8, p.shade);
+  } else if (theme.shadow) {
     ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
     ctx.shadowBlur = ppg * 0.35;
   }
   ctx.strokeStyle = theme.wall;
   ctx.lineWidth = ppg * theme.wallWidth;
   strokeAll();
+  if (p.depth > 0) {
+    ctx.shadowColor = 'rgba(0, 0, 0, 0)';
+    drawWallBevel(ctx, walls, ppg, theme.wall, theme.wallWidth, p.depth);
+  }
   if (theme.wallLine) {
     ctx.shadowColor = theme.wallLine;
     ctx.shadowBlur = ppg * 0.3;
@@ -694,16 +724,26 @@ const STAIR_PAINTERS: Record<StairStyle, StairPainter> = {
 type PillarPainter = (p: Paint, x: number, y: number) => void;
 
 const PILLAR_PAINTERS: Record<PillarStyle, PillarPainter> = {
-  round: ({ ctx, ppg, theme }, x, y) => {
+  round: ({ ctx, ppg, theme, depth, shade }, x, y) => {
     ctx.save();
-    if (theme.shadow) {
+    if (depth > 0) {
+      castShadow(ctx, ppg, depth, 1.6, shade);
+    } else if (theme.shadow) {
       ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
       ctx.shadowBlur = ppg * 0.25;
     }
+    const r = ppg * PILLAR_RADIUS;
     ctx.beginPath();
-    ctx.arc(x * ppg, y * ppg, ppg * PILLAR_RADIUS, 0, Math.PI * 2);
+    ctx.arc(x * ppg, y * ppg, r, 0, Math.PI * 2);
     ctx.fillStyle = theme.pillarFill;
     ctx.fill();
+    if (depth > 0) {
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0)';
+      ctx.clip();
+      bevel(ctx, x * ppg - r, y * ppg - r, r * 2, r * 2, depth);
+      ctx.restore();
+    }
     ctx.lineWidth = ppg * 0.06;
     ctx.strokeStyle = theme.pillarStroke;
     ctx.stroke();
@@ -711,11 +751,20 @@ const PILLAR_PAINTERS: Record<PillarStyle, PillarPainter> = {
   },
 
   // Square support column with a glowing trim line.
-  square: ({ ctx, ppg, theme }, x, y) => {
+  square: ({ ctx, ppg, theme, depth, shade }, x, y) => {
     const r = ppg * PILLAR_RADIUS * 0.92;
     ctx.save();
-    ctx.fillStyle = theme.pillarFill;
-    ctx.fillRect(x * ppg - r, y * ppg - r, r * 2, r * 2);
+    if (depth > 0) {
+      ctx.save();
+      castShadow(ctx, ppg, depth, 1.6, shade);
+      ctx.fillStyle = theme.pillarFill;
+      ctx.fillRect(x * ppg - r, y * ppg - r, r * 2, r * 2);
+      ctx.restore();
+      bevel(ctx, x * ppg - r, y * ppg - r, r * 2, r * 2, depth);
+    } else {
+      ctx.fillStyle = theme.pillarFill;
+      ctx.fillRect(x * ppg - r, y * ppg - r, r * 2, r * 2);
+    }
     ctx.shadowColor = theme.pillarStroke;
     ctx.shadowBlur = ppg * 0.2;
     ctx.strokeStyle = theme.pillarStroke;
@@ -725,13 +774,17 @@ const PILLAR_PAINTERS: Record<PillarStyle, PillarPainter> = {
   },
 
   // Copper boiler drum with a rivet ring.
-  boiler: ({ ctx, ppg, theme }, x, y) => {
+  boiler: ({ ctx, ppg, theme, depth, shade }, x, y) => {
     const cx = x * ppg;
     const cy = y * ppg;
     const r = ppg * PILLAR_RADIUS * 1.08;
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-    ctx.shadowBlur = ppg * 0.25;
+    // The copper gradient already reads as round; depth just moves the shadow to fall down-right.
+    if (depth > 0) castShadow(ctx, ppg, depth, 1.8, shade);
+    else {
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+      ctx.shadowBlur = ppg * 0.25;
+    }
     const g = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r);
     g.addColorStop(0, '#f6c48a');
     g.addColorStop(0.5, theme.pillarFill);
@@ -741,6 +794,10 @@ const PILLAR_PAINTERS: Record<PillarStyle, PillarPainter> = {
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
+    if (depth > 0) {
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+    }
     ctx.lineWidth = Math.max(1, ppg * 0.04);
     ctx.strokeStyle = theme.pillarStroke;
     ctx.stroke();
@@ -977,22 +1034,6 @@ function gear(ctx: Ctx, cx: number, cy: number, r: number, teeth: number, rot: n
   ctx.fill('evenodd');
 }
 
-/** Visits every unit-length wall edge with the side (dx, dy) that faces into rock. */
-function eachWallUnit(d: Dungeon, fn: (x1: number, y1: number, x2: number, y2: number, rx: number, ry: number) => void): void {
-  const open = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < d.width && y < d.height && isOpen(d.cells[y * d.width + x] as number);
-  for (let y = 1; y < d.height; y++) {
-    for (let x = 0; x < d.width; x++) {
-      const up = open(x, y - 1);
-      if (up !== open(x, y)) fn(x, y, x + 1, y, 0, up ? 1 : -1);
-    }
-  }
-  for (let x = 1; x < d.width; x++) {
-    for (let y = 0; y < d.height; y++) {
-      const left = open(x - 1, y);
-      if (left !== open(x, y)) fn(x, y, x, y + 1, left ? 1 : -1, 0);
-    }
-  }
-}
 
 const DECOR: Record<DecorStyle, { phase: DecorPhase; paint: (p: Paint) => void }> = {
   // Gear silhouettes set into the brickwork.
@@ -1181,14 +1222,17 @@ const DECOR: Record<DecorStyle, { phase: DecorPhase; paint: (p: Paint) => void }
 
 function drawProps(p: Paint): void {
   const { ctx, ppg, d } = p;
-  const c: PropPaintContext = { ctx, ppg, rng: p.rng, palette: p.theme.props };
+  const base: PropPaintContext = { ctx, ppg, rng: p.rng, palette: p.theme.props };
   for (const prop of d.props) {
     const long = PROP_SPECS[prop.kind].long;
     const w = long && !prop.vertical ? 2 : 1;
     const h = long && prop.vertical ? 2 : 1;
+    const box = { x: prop.x * ppg, y: prop.y * ppg, w: w * ppg, h: h * ppg, vertical: prop.vertical };
+    // With depth on, outlined shapes get a top-left highlight spanning the prop's footprint.
+    const c = p.depth > 0 ? { ...base, depth: p.depth, bounds: box } : base;
     ctx.save();
     ctx.lineJoin = 'round';
-    PROP_RENDERERS[prop.kind].draw(c, { x: prop.x * ppg, y: prop.y * ppg, w: w * ppg, h: h * ppg, vertical: prop.vertical });
+    PROP_RENDERERS[prop.kind].draw(c, box);
     ctx.restore();
   }
 }

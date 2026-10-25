@@ -5,6 +5,8 @@ import type { PropBox, PropPaintContext, PropRenderer } from './types.ts';
 
 export class StatueRenderer implements PropRenderer {
   readonly kind = 'statue';
+  readonly height = 1.8;
+  readonly round = false;
 
   draw(c: PropPaintContext, b: PropBox): void {
     const { ctx, ppg, palette } = c;
@@ -19,6 +21,8 @@ export class StatueRenderer implements PropRenderer {
 
 export class BrazierRenderer implements PropRenderer {
   readonly kind = 'brazier';
+  readonly height = 0.9;
+  readonly round = true;
 
   draw(c: PropPaintContext, b: PropBox): void {
     const { ctx, ppg, palette } = c;
@@ -35,6 +39,8 @@ export class BrazierRenderer implements PropRenderer {
 
 export class CoffinRenderer implements PropRenderer {
   readonly kind = 'coffin';
+  readonly height = 0.7;
+  readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette } = c;

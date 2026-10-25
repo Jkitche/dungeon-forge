@@ -12,7 +12,24 @@ export function outlined(c: PropPaintContext, fill: string, draw: () => void): v
   ctx.beginPath();
   draw();
   ctx.fill();
+  if (c.depth && c.bounds) {
+    // Light the shape from the top-left, clipped to the shape itself.
+    ctx.save();
+    ctx.clip();
+    bevel(ctx, c.bounds.x, c.bounds.y, c.bounds.w, c.bounds.h, c.depth);
+    ctx.restore();
+  }
   ctx.stroke();
+}
+
+/** Light top-left, dark bottom-right, over whatever is clipped: a raised, lit surface. */
+export function bevel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, amount: number): void {
+  const g = ctx.createLinearGradient(x, y, x + w, y + h);
+  g.addColorStop(0, `rgba(255, 255, 255, ${(0.36 * amount).toFixed(3)})`);
+  g.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
+  g.addColorStop(1, `rgba(0, 0, 0, ${(0.4 * amount).toFixed(3)})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(x, y, w, h);
 }
 
 /** Inset a box by fractions of a square on each axis. */

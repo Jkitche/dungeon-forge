@@ -13,7 +13,8 @@ Other scripts:
 
 - `npm run build` compiles to `dist/` without launching the app.
 - `npm run typecheck` runs strict type checking over the source, tests and build script.
-- `npm test` runs the test suite. Node runs the `.ts` files directly, so there is no build step. The tests check that every map is fully connected, doors sit on real openings, the same seed always gives the same map, and the exports are well-formed.
+- `npm test` runs the unit tests. Node runs the `.ts` files directly, so there is no build step.
+- `npm run test:coverage` runs them with coverage, and fails if line or function coverage drops below 98% or branch coverage below 93%.
 
 The project is written entirely in TypeScript (strict mode, TypeScript 7), and Node 22.18 or newer is required.
 
@@ -35,6 +36,7 @@ The project is written entirely in TypeScript (strict mode, TypeScript 7), and N
 - **Stairs.** The entrance and the exit are placed as far apart as the layout allows. Rooms are numbered by walking distance from the entrance.
 - **Room key.** Every room is stocked with a name, atmosphere, feature and contents (monster, trap, special or empty, plus treasure). Click a room on the map or in the key to highlight it.
 - **Seeds.** Each seed always produces the same dungeon, so you can share a seed or tweak the sliders without losing the layout.
+- **Depth.** The **Depth** switch (Off, Subtle, Strong) makes maps read as 3D while staying top-down for VTTs. It adds raised walls with a lit and a shaded edge, shadows that fall away from a top-left light, darker floor where it meets walls, and highlights on pillars and furniture. Tall props like shelves and statues cast longer shadows, and rugs cast none. Nothing moves, so walls and doors still match VTT line of sight. **Light sources** dims the floor and lights pools around braziers, consoles and cryo pods. Maps with no light sources are left as they are.
 - **Look.** The art follows the setting. The **Look** switch in the Style section can swap any setting's art for **Blueprint** (old-school blue, good for print) or **Dark Stone** (flagstones and shadows, good for VTTs).
 - **GM and player views.** The player view hides room numbers and draws secret doors as plain wall.
 - **Save and open.** Maps save as `.dungeon.json` files.
@@ -77,6 +79,12 @@ Undo with Ctrl+Z and redo with Ctrl+Shift+Z. In edit mode, right-drag or hold Sp
 Windows block movement but not sight. Foundry gets a wall that blocks movement but not sight or light, with sound muffled. Fantasy Grounds Unity gets a window occluder (`allow_vision`). Universal VTT gets an open portal, which is how Roll20's UniversalVTTImporter and uvtt2fgu recognise windows; other importers may treat it as an open door.
 
 Universal VTT has no secret-door flag, and Fantasy Grounds' secret-door flag isn't documented, so both exports bring secret doors in as ordinary closed doors. The Fantasy Grounds notes file lists where they are so you can switch them to secret in FG's line-of-sight editor. The Foundry export keeps them secret.
+
+## Testing
+
+Tests use Node's built-in `node:test`, one file per source module. The logic modules are pure data, so they're tested directly. Drawing code is tested against a recording fake canvas from `test/helpers.ts`, which logs every call and colour. That covers the map renderer, the prop renderers and the editor's previews. The export strategies run against a fake export context.
+
+Some tests check invariants over many random inputs rather than single examples. For instance, every generated map must be fully connected, and thousands of random edits must leave a map consistent. `app.ts` and `main.ts` are DOM and Electron glue and aren't unit-tested; check those by running the app.
 
 ## Adding an export format
 
@@ -131,6 +139,7 @@ src/
     contents.ts         Room stocking (d6 monster / trap / special / empty)
     walls.ts            Wall and pillar geometry derived from the grid
     renderer.ts         Canvas drawing; themes are data that pick rock/floor/door/stair/pillar/decor painters
+    depth.ts            Depth and lighting: shadows, ambient occlusion, wall bevels, light pools
     text.ts             slugify, base64, and an escaping `html` template for export summaries
     export/
       types.ts          ExportStrategy, ExportContext, ExportTarget, ExportResult
@@ -139,7 +148,8 @@ src/
       fantasygrounds.ts Unity (line-of-sight XML) and Classic (images + story entries) modules
     zip.ts              Minimal zip writer (used for .mod files)
     rng.ts              Seeded RNG
-test/generator.test.ts  node:test suite
+test/                   Unit tests, one file per module (export tests under test/export/)
+  helpers.ts            Shared invariants and fakes: a recording canvas, an export context, a zip reader
 scripts/build.ts        Clean build: tsc for main and renderer, then copy static files
 tsconfig.*.json         base / main (NodeNext) / renderer (DOM, ES modules) / root (typecheck everything)
 ```

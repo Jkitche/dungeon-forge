@@ -5,6 +5,8 @@ import type { PropBox, PropPaintContext, PropRenderer } from './types.ts';
 
 export class ConsoleRenderer implements PropRenderer {
   readonly kind = 'console';
+  readonly height = 1;
+  readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette } = c;
@@ -31,6 +33,8 @@ export class ConsoleRenderer implements PropRenderer {
 
 export class CryoPodRenderer implements PropRenderer {
   readonly kind = 'pod';
+  readonly height = 0.9;
+  readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette } = c;

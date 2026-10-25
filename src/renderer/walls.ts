@@ -70,3 +70,20 @@ export function computePillarOutlines(d: Dungeon): Point[][] {
   }
   return out;
 }
+
+/** Visits every unit-length wall edge with the side (dx, dy) that faces into rock. */
+export function eachWallUnit(d: Dungeon, fn: (x1: number, y1: number, x2: number, y2: number, rx: number, ry: number) => void): void {
+  const open = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < d.width && y < d.height && isOpen(d.cells[y * d.width + x] as number);
+  for (let y = 1; y < d.height; y++) {
+    for (let x = 0; x < d.width; x++) {
+      const up = open(x, y - 1);
+      if (up !== open(x, y)) fn(x, y, x + 1, y, 0, up ? 1 : -1);
+    }
+  }
+  for (let x = 1; x < d.width; x++) {
+    for (let y = 0; y < d.height; y++) {
+      const left = open(x - 1, y);
+      if (left !== open(x, y)) fn(x, y, x, y + 1, left ? 1 : -1, 0);
+    }
+  }
+}

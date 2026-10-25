@@ -5,6 +5,8 @@ import type { PropBox, PropPaintContext, PropRenderer } from './types.ts';
 
 export class CrateRenderer implements PropRenderer {
   readonly kind = 'crate';
+  readonly height = 1;
+  readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette } = c;
@@ -21,6 +23,8 @@ export class CrateRenderer implements PropRenderer {
 
 export class BarrelRenderer implements PropRenderer {
   readonly kind = 'barrel';
+  readonly height = 1;
+  readonly round = true;
 
   draw(c: PropPaintContext, b: PropBox): void {
     const { ctx, ppg, palette } = c;
@@ -40,6 +44,8 @@ export class BarrelRenderer implements PropRenderer {
 
 export class ChestRenderer implements PropRenderer {
   readonly kind = 'chest';
+  readonly height = 0.6;
+  readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette } = c;

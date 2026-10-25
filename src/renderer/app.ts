@@ -2,6 +2,8 @@ import { generateDungeon, normalizeOptions, serializeDungeon, deserializeDungeon
 import type { Dungeon, DungeonOptions, SerializedDungeon } from './generator.ts';
 import { renderDungeon, LOOKS, isLook, resolveTheme } from './renderer.ts';
 import type { Look, RenderOptions } from './renderer.ts';
+import { DEPTH_LEVELS, isDepthLevel } from './depth.ts';
+import type { DepthLevel } from './depth.ts';
 import { EXPORTERS, getExporter, createExportTarget } from './export/index.ts';
 import type { ExportContext, ExportStrategy, RenderRequest } from './export/index.ts';
 import { html, slugify } from './text.ts';
@@ -41,6 +43,8 @@ function el<K extends keyof HTMLElementTagNameMap>(
 
 interface StyleOptions {
   look: Look;
+  depth: DepthLevel;
+  lighting: boolean;
   showGrid: boolean;
   showLabels: boolean;
 }
@@ -70,7 +74,7 @@ const state: {
   exportFormat: string;
 } = {
   options: { ...DEFAULT_OPTIONS, seed: randomSeed() },
-  style: { look: 'setting', showGrid: true, showLabels: true },
+  style: { look: 'setting', depth: 'subtle', lighting: false, showGrid: true, showLabels: true },
   gmView: true,
   dungeon: null,
   mapCanvas: document.createElement('canvas'),
@@ -188,6 +192,8 @@ const CONTROLS: Section[] = [
     style: true,
     items: [
       { key: 'look', type: 'segmented', label: 'Look', options: LOOKS },
+      { key: 'depth', type: 'segmented', label: 'Depth', options: DEPTH_LEVELS },
+      { key: 'lighting', type: 'check', label: 'Light sources' },
       { key: 'showGrid', type: 'check', label: 'Show grid' },
       { key: 'showLabels', type: 'check', label: 'Room numbers (GM view)' },
     ],
@@ -297,6 +303,8 @@ function syncControls(): void {
 function renderStyle(d: Dungeon): RenderOptions {
   return {
     theme: resolveTheme(state.style.look, getGenre(d.options.genre).theme),
+    depth: state.style.depth,
+    lighting: state.style.lighting,
     showGrid: state.style.showGrid,
     showLabels: state.style.showLabels,
   };
@@ -683,6 +691,8 @@ async function openMap(): Promise<void> {
     const legacyLook = style?.theme === 'blueprint' || style?.theme === 'stone' ? style.theme : 'setting';
     state.style = {
       look: isLook(style?.look) ? style.look : legacyLook,
+      depth: isDepthLevel(style?.depth) ? style.depth : state.style.depth,
+      lighting: style?.lighting ?? state.style.lighting,
       showGrid: style?.showGrid ?? state.style.showGrid,
       showLabels: style?.showLabels ?? state.style.showLabels,
     };

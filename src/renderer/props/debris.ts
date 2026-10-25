@@ -5,6 +5,8 @@ import type { PropBox, PropPaintContext, PropRenderer } from './types.ts';
 
 export class RubbleRenderer implements PropRenderer {
   readonly kind = 'rubble';
+  readonly height = 0.3;
+  readonly round = true;
 
   draw(c: PropPaintContext, b: PropBox): void {
     const { ctx, ppg, palette, rng } = c;
@@ -20,6 +22,8 @@ export class RubbleRenderer implements PropRenderer {
 
 export class BonesRenderer implements PropRenderer {
   readonly kind = 'bones';
+  readonly height = 0;
+  readonly round = true;
 
   draw(c: PropPaintContext, b: PropBox): void {
     const { ctx, ppg, palette, rng } = c;
