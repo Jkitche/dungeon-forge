@@ -8,6 +8,7 @@
   "scripts": {
     "build": "node scripts/build.ts",
     "start": "npm run build && electron .",
+    "dev": "node scripts/dev.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test \"test/**/*.test.ts\"",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-lines=98 --test-coverage-branches=93 --test-coverage-functions=98 \"test/**/*.test.ts\""

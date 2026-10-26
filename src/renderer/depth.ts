@@ -4,13 +4,15 @@
 // Light always falls from the top-left, so shadows fall down and to the right, walls are
 // lit on their top/left edge, and floor beside a north or west wall sits in its shadow.
 
-import { PROP_SPECS, footprint } from './clutter.ts';
+import { PROP_SPECS, footprint, propAt } from './clutter.ts';
 import type { Prop } from './clutter.ts';
 import type { Dungeon } from './generator.ts';
 import { PILLAR } from './cells.ts';
 import { eachWallUnit, PILLAR_RADIUS } from './walls.ts';
 import type { Segment } from './walls.ts';
 import { withAlpha } from './props/draw.ts';
+import { lightLayers, visibilityPolygon } from './raycast.ts';
+import type { Occluder } from './raycast.ts';
 export { bevel } from './props/draw.ts';
 import type { PropPalette, PropRenderer } from './props/types.ts';
 
@@ -146,26 +148,49 @@ export interface LightSource {
   /** Reach in squares. */
   radius: number;
   colour: string;
+  /** Index of the glowing prop, which doesn't shade its own light. */
+  prop?: number;
 }
 
-/** Braziers, screens and cryo pods glow in the theme's light colour. */
+/** Braziers, screens and cryo pods, and lights placed in the editor, glow in the theme's light colour. */
 export function lightSources(d: Dungeon, palette: PropPalette): LightSource[] {
   const lights: LightSource[] = [];
-  for (const p of d.props) {
+  d.props.forEach((p, prop) => {
     const long = PROP_SPECS[p.kind].long;
     const cx = p.x + (long && !p.vertical ? 1 : 0.5);
     const cy = p.y + (long && p.vertical ? 1 : 0.5);
-    if (p.kind === 'brazier') lights.push({ x: cx, y: cy, radius: 3.2, colour: palette.glow });
-    else if (p.kind === 'console' || p.kind === 'pod') lights.push({ x: cx, y: cy, radius: 2, colour: palette.glow });
+    if (p.kind === 'brazier') lights.push({ x: cx, y: cy, radius: 3.2, colour: palette.glow, prop });
+    else if (p.kind === 'console' || p.kind === 'pod') lights.push({ x: cx, y: cy, radius: 2, colour: palette.glow, prop });
+  });
+  for (const l of d.lights) {
+    // A light set on a prop (a lamp on a table, a torch on a crate) isn't shaded by it.
+    const prop = propAt(d, l.x, l.y);
+    lights.push({ x: l.x + 0.5, y: l.y + 0.5, radius: l.radius, colour: palette.glow, ...(prop >= 0 ? { prop } : {}) });
   }
   return lights;
 }
 
 /**
- * Dims the floor, then adds a pool of light around each source. Call with the floor
- * clipped, after props and before walls, so walls and labels stay crisp.
+ * Where each light is sampled from, in squares from its centre. A flame isn't a point, so
+ * sampling a few spots across it and blending gives shadows soft edges.
  */
-export function drawLighting(ctx: Ctx, lights: readonly LightSource[], ppg: number, width: number, height: number, darkness: number): void {
+const LIGHT_SAMPLES: readonly [number, number][] = [[0, 0], [-0.12, -0.12], [0.12, -0.12], [-0.12, 0.12], [0.12, 0.12]];
+
+/**
+ * Dims the floor, then adds a pool of light around each source. With `occluders` (see
+ * lightOccluders), each pool only reaches what the light can see: walls, doors, pillars
+ * and full-cover clutter cast full shadows, and half or three-quarters cover partial ones.
+ * Call with the floor clipped, after props and before walls, so walls and labels stay crisp.
+ */
+export function drawLighting(
+  ctx: Ctx,
+  lights: readonly LightSource[],
+  ppg: number,
+  width: number,
+  height: number,
+  darkness: number,
+  occluders?: readonly Occluder[],
+): void {
   ctx.save();
   ctx.fillStyle = `rgba(0, 0, 0, ${darkness})`;
   ctx.fillRect(0, 0, width, height);
@@ -174,11 +199,30 @@ export function drawLighting(ctx: Ctx, lights: readonly LightSource[], ppg: numb
     const x = l.x * ppg;
     const y = l.y * ppg;
     const r = l.radius * ppg;
-    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, withAlpha(l.colour, 0.4));
-    g.addColorStop(1, withAlpha(l.colour, 0));
-    ctx.fillStyle = g;
-    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    const pool = (alpha: number): CanvasGradient => {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, withAlpha(l.colour, alpha));
+      g.addColorStop(1, withAlpha(l.colour, 0));
+      return g;
+    };
+    if (!occluders) {
+      ctx.fillStyle = pool(0.4);
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      continue;
+    }
+    for (const layer of lightLayers(occluders, l.prop)) {
+      ctx.fillStyle = pool((0.4 * layer.weight) / LIGHT_SAMPLES.length);
+      for (const [sx, sy] of LIGHT_SAMPLES) {
+        // Light only lands where a ray from this spot reaches.
+        ctx.save();
+        ctx.beginPath();
+        for (const p of visibilityPolygon(l.x + sx, l.y + sy, l.radius, layer.segments)) ctx.lineTo(p.x * ppg, p.y * ppg);
+        ctx.closePath();
+        ctx.clip();
+        ctx.fillRect(x - r, y - r, r * 2, r * 2);
+        ctx.restore();
+      }
+    }
   }
   ctx.restore();
 }

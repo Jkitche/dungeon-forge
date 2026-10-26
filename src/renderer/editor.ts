@@ -5,10 +5,11 @@
 
 import { RNG, randomSeed } from './rng.ts';
 import { CORRIDOR, DIRS, PILLAR, ROCK, ROOM, inRoomShape, isFloor, normalizeOptions } from './generator.ts';
-import type { Door, DoorType, Dungeon, DungeonOptions, MapWindow, Room, Stair } from './generator.ts';
+import type { Door, DoorType, Dungeon, DungeonOptions, MapLight, MapWindow, Room, Stair } from './generator.ts';
 import { createStocker, stockRoom } from './contents.ts';
 import type { RoomContents } from './contents.ts';
 import { getGenre } from './genres.ts';
+import { detectEnvironment } from './environment.ts';
 import { PROP_SPECS, editorFree, fitProp, footprint, propAt } from './clutter.ts';
 import type { Prop, PropKind } from './clutter.ts';
 
@@ -49,6 +50,7 @@ export function createBlankDungeon(input: Partial<DungeonOptions> = {}): Dungeon
     windows: [],
     stairs: [],
     props: [],
+    lights: [],
     edited: true,
   };
 }
@@ -106,7 +108,7 @@ export function paintRoom(d: Dungeon, a: Cell, b: Cell, contents: RoomContents):
   d.rooms.push({
     id, x, y, w, h, shape: 'rect',
     cx: x + Math.floor(w / 2), cy: y + Math.floor(h / 2),
-    entrance: false, exit: false, contents, doorCount: 0,
+    entrance: false, exit: false, contents, doorCount: 0, environment: detectEnvironment(contents),
   });
   return commit(d);
 }
@@ -259,6 +261,32 @@ export function rotateProp(d: Dungeon, c: Cell): boolean {
   return false;
 }
 
+/** Index of the placed light on a square, or -1. */
+export const lightAt = (d: Dungeon, c: Cell): number => d.lights.findIndex((l) => l.x === c.x && l.y === c.y);
+
+/** Places a light of the given reach on a floor square. */
+export function placeLight(d: Dungeon, c: Cell, radius: number): boolean {
+  if (!isEditable(d, c.x, c.y) || !isFloor(d.cells[idx(d, c.x, c.y)] as number) || lightAt(d, c) >= 0) return false;
+  d.lights.push({ x: c.x, y: c.y, radius, room: -1 });
+  return commit(d);
+}
+
+/** Removes the light on a square. */
+export function removeLight(d: Dungeon, c: Cell): boolean {
+  const i = lightAt(d, c);
+  if (i < 0) return false;
+  d.lights.splice(i, 1);
+  return commit(d);
+}
+
+/** Changes the reach of the light on a square. */
+export function setLightRadius(d: Dungeon, c: Cell, radius: number): boolean {
+  const light = d.lights[lightAt(d, c)];
+  if (!light || light.radius === radius) return false;
+  light.radius = radius;
+  return commit(d);
+}
+
 /** Wipes the map back to solid rock. */
 export function clearMap(d: Dungeon): boolean {
   if (d.rooms.length === 0 && d.cells.every((t) => t === ROCK)) return false;
@@ -269,6 +297,7 @@ export function clearMap(d: Dungeon): boolean {
   d.windows = [];
   d.stairs = [];
   d.props = [];
+  d.lights = [];
   return commit(d);
 }
 
@@ -293,7 +322,7 @@ export function stockNewRoom(d: Dungeon, rng: RNG = new RNG(randomSeed())): Room
 /**
  * Rebuilds everything derived from the cell grid after an edit: drops rooms that lost
  * all their squares, recomputes each room's bounds, shape and label square, renumbers
- * rooms, and removes doors and stairs that no longer sit on floor.
+ * rooms, and removes doors, stairs and lights that no longer sit on floor.
  * On a freshly generated dungeon this changes nothing.
  */
 export function normalizeDungeon(d: Dungeon): void {
@@ -393,6 +422,16 @@ export function normalizeDungeon(d: Dungeon): void {
     return true;
   });
 
+  // Placed lights: only on floor, one per square.
+  const seenLights = new Set<number>();
+  d.lights = d.lights.filter((l) => {
+    const c = inside(d, l) ? idx(d, l.x, l.y) : -1;
+    if (c < 0 || seenLights.has(c) || !isFloor(cells[c] as number)) return false;
+    seenLights.add(c);
+    l.room = roomIds[c] as number;
+    return true;
+  });
+
   // Stairs: only on floor, one per square.
   const seenStairs = new Set<number>();
   d.stairs = d.stairs.filter((s: Stair) => {
@@ -434,6 +473,7 @@ export interface Snapshot {
   windows: MapWindow[];
   stairs: Stair[];
   props: Prop[];
+  lights: MapLight[];
   edited: boolean;
 }
 
@@ -446,6 +486,7 @@ export function snapshot(d: Dungeon): Snapshot {
     windows: structuredClone(d.windows),
     stairs: structuredClone(d.stairs),
     props: structuredClone(d.props),
+    lights: structuredClone(d.lights),
     edited: d.edited ?? false,
   };
 }
@@ -458,5 +499,6 @@ export function restore(d: Dungeon, s: Snapshot): void {
   d.windows = structuredClone(s.windows);
   d.stairs = structuredClone(s.stairs);
   d.props = structuredClone(s.props);
+  d.lights = structuredClone(s.lights);
   d.edited = s.edited;
 }

@@ -11,6 +11,7 @@ npm start          # compiles TypeScript to dist/ and launches Electron
 
 Other scripts:
 
+- `npm run dev` builds, launches the app and rebuilds on every save under `src/`. Renderer changes (code, styles, HTML, textures) reload the window in a fraction of a second and keep the map you're working on, its style, the view and edit mode. Main process and preload changes restart the app. Type errors are printed but don't stop the app. Extra Electron flags go after `--`, e.g. `npm run dev -- --remote-debugging-port=9222`.
 - `npm run build` compiles to `dist/` without launching the app.
 - `npm run typecheck` runs strict type checking over the source, tests and build script.
 - `npm test` runs the unit tests. Node runs the `.ts` files directly, so there is no build step.
@@ -36,16 +37,17 @@ The project is written entirely in TypeScript (strict mode, TypeScript 7), and N
 - **Stairs.** The entrance and the exit are placed as far apart as the layout allows. Rooms are numbered by walking distance from the entrance.
 - **Room key.** Every room is stocked with a name, atmosphere, feature and contents (monster, trap, special or empty, plus treasure). Click a room on the map or in the key to highlight it.
 - **Seeds.** Each seed always produces the same dungeon, so you can share a seed or tweak the sliders without losing the layout.
-- **Depth.** The **Depth** switch (Off, Subtle, Strong) makes maps read as 3D while staying top-down for VTTs. It adds raised walls with a lit and a shaded edge, shadows that fall away from a top-left light, darker floor where it meets walls, and highlights on pillars and furniture. Tall props like shelves and statues cast longer shadows, and rugs cast none. Nothing moves, so walls and doors still match VTT line of sight. **Light sources** dims the floor and lights pools around braziers, consoles and cryo pods. Maps with no light sources are left as they are.
-- **Look.** The art follows the setting. The **Look** switch in the Style section can swap any setting's art for **Blueprint** (old-school blue, good for print) or **Dark Stone** (flagstones and shadows, good for VTTs).
+- **Room conditions.** Rooms whose name or atmosphere implies a condition are tagged with it in the room key: **Lava**, **Burning**, **Iced over**, **Frozen**, **Scorching**, **Webbed**, **Crystalline**, **Overgrown**, **Toxic**, **Flooded** or **Smoky**. With **Room cold and heat** on (Style section), **Frozen** rooms are washed blue and **Scorching** rooms red, and the colour bleeds out through their doorways and fades along the corridor. Closed doors let less through than open archways, and secret doors let nothing through, so they stay secret. Features and traps don't count, so an unsprung freezing-gas trap gives nothing away.
+- **Depth.** The **Depth** switch (Off, Subtle, Strong) makes maps read as 3D while staying top-down for VTTs. It adds raised walls with a lit and a shaded edge, shadows that fall away from a top-left light, darker floor where it meets walls, and highlights on pillars and furniture. Tall props like shelves and statues cast longer shadows, and rugs cast none. Nothing moves, so walls and doors still match VTT line of sight. **Light sources** dims the floor and lights pools around braziers, consoles and cryo pods. Light is ray cast, so walls, closed doors and pillars cast shadows with soft edges, and light never leaks into the next room. Clutter blocks light by its cover, as in D&D: shelves give full cover and block it completely, statues and cryo pods give three-quarters cover (a quarter of the light gets past), crates, barrels, chests, coffins, consoles and rubble give half cover, and tables, beds, rugs, bones and braziers give none. Maps with no light sources are left as they are.
+- **Look.** The art follows the setting. The **Look** switch in the Style section can swap any setting's art for **Blueprint** (old-school blue, good for print), **Dark Stone** (flagstones and shadows, good for VTTs) or **Realistic** (photographic rock and cobblestones). Realistic uses CC0 textures from [ambientCG](https://ambientcg.com); see `src/renderer/assets/textures/README.md`.
 - **GM and player views.** The player view hides room numbers and draws secret doors as plain wall.
 - **Save and open.** Maps save as `.dungeon.json` files.
 
 ## Clutter
 
-The **Clutter** slider fills rooms with furniture and props. Each setting has its own set: barrels, crates, beds and bookshelves for fantasy, consoles and cryo pods for sci-fi, coffins and candelabra-lit braziers for gothic horror, and so on. Room names steer the choice, so a Library gets shelves, Barracks get beds and a Crypt gets coffins and bones. Shelves, beds and consoles stand against walls; tables, rugs and statues go mid-room. Doorways, corridor openings, stairs and room numbers are always kept clear.
+The **Clutter** slider fills rooms with furniture and props. Each setting has its own set: barrels, crates, beds and bookshelves for fantasy, consoles and cryo pods for sci-fi, coffins and candelabra-lit braziers for gothic horror, and so on. Each room is furnished to suit its name: a Library gets shelves, tables, a rug and a chest, Barracks get beds and footlockers, a Crypt gets coffins and bones, a Wine Cellar gets barrels, and natural caverns get loose rock. Every room name in every setting has its own set, and a setting never borrows props from another (no consoles in a fantasy keep). Rooms you name yourself fall back to the setting's general mix if their name isn't recognised. Shelves, beds and consoles stand against walls; tables, rugs and statues go mid-room. Doorways, corridor openings, stairs and room numbers are always kept clear.
 
-Clutter is decoration only: it's drawn on the map image but doesn't block movement or sight in VTT exports. It uses its own random stream, so changing the slider never changes a seed's floor plan or room key.
+Each prop has a cover level (none, half, three-quarters or full), shown beside it in the editor's **Prop** list; it decides how much light the prop blocks. Otherwise clutter is decoration only: it's drawn on the map image but doesn't block movement or sight in VTT exports. It uses its own random stream, so changing the slider never changes a seed's floor plan or room key.
 
 ## Drawing your own maps
 
@@ -61,6 +63,7 @@ Click **Edit map** (Ctrl+Shift+E) to edit the current map and choose a tool from
 | Pillar | P | Click a floor square to add or remove a pillar. |
 | Clutter | F | Pick a prop from the **Prop** list (the setting's own props come first), then click floor to place it. Click a prop to remove it, Shift-click to turn it. |
 | Stairs | S | Click a floor square: stairs up, then down, then none. |
+| Lighting | L | Pick a reach from the **Radius** list (5 ft candle to 60 ft), then click floor to place a light. Click a light to remove it, Shift-click to give it the chosen radius. While the tool is selected, each light's reach is outlined. Placing a light turns on **Light sources**. |
 
 Undo with Ctrl+Z and redo with Ctrl+Shift+Z. In edit mode, right-drag or hold Space to pan. New rooms are stocked from the current setting's tables and appear in the room key straight away. Walls are worked out from the floor, so every export works on hand-drawn maps too. Once a map has been edited, the seed no longer reproduces it, so the app asks before anything would regenerate over your work. Save it with **Save** to keep it.
 
@@ -140,6 +143,8 @@ src/
     walls.ts            Wall and pillar geometry derived from the grid
     renderer.ts         Canvas drawing; themes are data that pick rock/floor/door/stair/pillar/decor painters
     depth.ts            Depth and lighting: shadows, ambient occlusion, wall bevels, light pools
+    environment.ts      Room environments: detection from descriptions, and how far each spills
+    effects.ts          Drawing room environments and their doorway plumes
     text.ts             slugify, base64, and an escaping `html` template for export summaries
     export/
       types.ts          ExportStrategy, ExportContext, ExportTarget, ExportResult

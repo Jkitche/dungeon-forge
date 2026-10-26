@@ -9,6 +9,8 @@ import { createStocker, stockRoom } from './contents.ts';
 import type { RoomContents } from './contents.ts';
 import { getGenre, isGenreKey } from './genres.ts';
 import { placeClutter } from './clutter.ts';
+import { detectEnvironment, isEnvironment } from './environment.ts';
+import type { Environment } from './environment.ts';
 import type { Prop } from './clutter.ts';
 import type { GenreKey } from './genres.ts';
 
@@ -63,6 +65,8 @@ export interface Room {
   exit: boolean;
   contents: RoomContents | null;
   doorCount: number;
+  /** Ice, heat, water... implied by the room's description; drawn on the map. */
+  environment: Environment | null;
 }
 
 /** A door on the cell edge (x1,y1)–(x2,y2), in grid units. */
@@ -93,6 +97,15 @@ export interface Stair {
   room: number;
 }
 
+/** A light placed in the editor, shining from the middle of square (x, y). */
+export interface MapLight {
+  x: number;
+  y: number;
+  /** Reach in squares. */
+  radius: number;
+  room: number;
+}
+
 export interface Dungeon {
   version: 1;
   seed: string;
@@ -108,6 +121,8 @@ export interface Dungeon {
   stairs: Stair[];
   /** Decorative furniture and props inside rooms. */
   props: Prop[];
+  /** Light sources placed by hand with the Lighting tool. */
+  lights: MapLight[];
   /** Set once the map has been hand-edited; the seed no longer reproduces it. */
   edited?: boolean;
 }
@@ -177,6 +192,7 @@ export function generateDungeon(input: Partial<DungeonOptions> = {}): Dungeon {
     windows: [],
     stairs: [],
     props: [],
+    lights: [],
   };
   // Per-cell noise makes winding corridors and cave tunnels wander deterministically.
   const noise = new Float32Array(W * H);
@@ -198,6 +214,7 @@ export function generateDungeon(input: Partial<DungeonOptions> = {}): Dungeon {
   for (const room of d.rooms) {
     room.contents = stockRoom(rng, decks, { isEntrance: room.entrance, isExit: room.exit });
     room.doorCount = d.doors.filter((door) => door.room === room.id).length;
+    room.environment = detectEnvironment(room.contents);
   }
   // After stocking, because room names steer the choice of props.
   placeClutter(d, o.clutter, o.genre);
@@ -205,7 +222,7 @@ export function generateDungeon(input: Partial<DungeonOptions> = {}): Dungeon {
 }
 
 function newRoom(id: number, x: number, y: number, w: number, h: number, shape: RoomShape, cx: number, cy: number): Room {
-  return { id, x, y, w, h, shape, cx, cy, entrance: false, exit: false, contents: null, doorCount: 0 };
+  return { id, x, y, w, h, shape, cx, cy, entrance: false, exit: false, contents: null, doorCount: 0, environment: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -821,7 +838,11 @@ export function deserializeDungeon(obj: unknown): Dungeon {
     ...full,
     // Maps saved before windows existed have none.
     windows: full.windows ?? [],
+    // Maps saved before environments existed work theirs out from the room descriptions.
+    rooms: full.rooms.map((r) => ({ ...r, environment: isEnvironment(r.environment) ? r.environment : detectEnvironment(r.contents) })),
     props: full.props ?? [],
+    // Maps saved before the Lighting tool have no placed lights.
+    lights: full.lights ?? [],
     cells: Uint8Array.from(full.cells, (ch) => Number(ch)),
     roomIds: Int16Array.from(full.roomIds),
   };

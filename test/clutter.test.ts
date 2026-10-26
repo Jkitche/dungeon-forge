@@ -2,7 +2,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { editorFree, fitProp, footprint, PROP_SPECS, propPool } from '../src/renderer/clutter.ts';
+import { editorFree, fitProp, footprint, PROP_SPECS, propPool, roomFurnishings } from '../src/renderer/clutter.ts';
+import { GENRES, GENRE_KEYS } from '../src/renderer/genres.ts';
 import { generateDungeon, DIRS, ROCK, ROOM, CORRIDOR } from '../src/renderer/generator.ts';
 import type { DungeonOptions } from '../src/renderer/generator.ts';
 import { variants } from './helpers.ts';
@@ -68,20 +69,43 @@ test('room names and settings steer the props', () => {
   assert.equal(kindsIn('fantasy', /./).get('console') ?? 0, 0, 'no consoles in fantasy');
   assert.equal(kindsIn('scifi', /./).get('coffin') ?? 0, 0, 'no coffins in sci-fi');
   const libraries = kindsIn('fantasy', /Library|Scriptorium/);
-  const all = kindsIn('fantasy', /./);
-  const share = (m: Map<string, number>, k: string): number => (m.get(k) ?? 0) / [...m.values()].reduce((a, b) => a + b, 0);
-  assert.ok(share(libraries, 'shelf') > share(all, 'shelf') * 1.5, 'libraries are heavier on shelves');
+  assert.ok((libraries.get('shelf') ?? 0) > 0, 'libraries get shelves');
+  assert.deepEqual([...libraries.keys()].filter((k) => !['shelf', 'table', 'rug', 'chest'].includes(k)), [], 'and nothing out of place');
+  const barracks = kindsIn('scifi', /Crew Quarters/);
+  assert.ok((barracks.get('bed') ?? 0) > 0 && !barracks.has('console'), 'crew quarters get bunks, not consoles');
 });
 
-test('prop pools are weighted by setting, boosted by room name, and filtered for caverns', () => {
+test('every room name in every setting is furnished to suit it', () => {
+  for (const genre of GENRE_KEYS) {
+    const g = GENRES[genre];
+    for (const [names, cave] of [[g.roomNames, false], [g.caveNames, true], [[g.entranceName, g.exitName], false]] as const) {
+      for (const name of names) {
+        const wanted = roomFurnishings(name);
+        assert.ok(wanted, `${genre} "${name}" has furnishings`);
+        const pool = propPool(genre, name, cave);
+        assert.ok(pool.length > 0, `${genre} "${name}" gets props`);
+        for (const k of pool) assert.ok(Object.hasOwn(wanted, k), `${genre} "${name}" gets only what it calls for, not ${k}`);
+        if (cave) for (const k of pool) assert.ok(PROP_SPECS[k].cave, `${k} fits a cave`);
+      }
+    }
+  }
+});
+
+test('prop pools follow the room name, within what the setting uses', () => {
   const count = (pool: string[], k: string): number => pool.filter((x) => x === k).length;
-  const store = propPool('fantasy', 'Storeroom', false);
-  const hall = propPool('fantasy', 'Great Hall', false);
-  assert.ok(count(store, 'crate') > count(hall, 'crate'), 'storerooms get more crates');
-  assert.equal(count(propPool('fantasy', 'Guardroom', false), 'coffin'), 0, 'weight 0: only where a room calls for it');
+  assert.deepEqual([...new Set(propPool('fantasy', 'Library', false))].sort(), ['chest', 'rug', 'shelf', 'table']);
+  assert.ok(count(propPool('fantasy', 'Storeroom', false), 'crate') > 0);
+  assert.equal(count(propPool('fantasy', 'Storeroom', false), 'coffin'), 0);
   assert.ok(count(propPool('fantasy', 'Crypt', false), 'coffin') > 0);
-  assert.equal(count(propPool('fantasy', 'Library', false), 'console'), 0, 'hints never add props the setting lacks');
-  for (const k of propPool('scifi', 'Ore Pocket', true)) assert.ok(PROP_SPECS[k].cave, `${k} fits a cave`);
+  assert.deepEqual([...new Set(propPool('scifi', 'Alien Ossuary', true))], ['bones'], 'no coffins or braziers on a starship');
+  // A name that calls for nothing gets the setting's general mix.
+  assert.equal(roomFurnishings('Mysterious Room'), null);
+  const general = propPool('fantasy', 'Mysterious Room', false);
+  assert.ok(count(general, 'crate') > 0 && count(general, 'coffin') === 0, 'weight 0: only where a room calls for it');
+  // So does one whose furnishings the setting lacks entirely, or that won't fit a cavern.
+  assert.ok(propPool('fantasy', 'Cryo Bay', false).length > 0);
+  assert.equal(count(propPool('fantasy', 'Cryo Bay', false), 'pod'), 0);
+  for (const k of propPool('fantasy', 'Library', true)) assert.ok(PROP_SPECS[k].cave, `${k} fits a cave`);
 });
 
 test('fitProp: strict generation rules versus the editor', () => {

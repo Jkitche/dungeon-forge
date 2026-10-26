@@ -6,15 +6,17 @@ import { GENRES, GENRE_KEYS } from '../src/renderer/genres.ts';
 import { isThemeKey, isLook, LOOKS, resolveTheme, renderDungeon, THEMES } from '../src/renderer/renderer.ts';
 import type { RenderOptions, ThemeKey } from '../src/renderer/renderer.ts';
 import { generateDungeon } from '../src/renderer/generator.ts';
+import { createBlankDungeon, lineCells, paintCorridor, paintRoom } from '../src/renderer/editor.ts';
 import { computeWalls } from '../src/renderer/walls.ts';
 import { drawnText, fakeCanvas, installPath2D } from './helpers.ts';
 
-test('the Look follows the setting unless Blueprint or Dark Stone is chosen', () => {
+test('the Look follows the setting unless Blueprint, Dark Stone or Realistic is chosen', () => {
   for (const key of GENRE_KEYS) {
     const theme = GENRES[key].theme;
     assert.equal(resolveTheme('setting', theme), theme);
     assert.equal(resolveTheme('blueprint', theme), 'blueprint');
     assert.equal(resolveTheme('stone', theme), 'stone');
+    assert.equal(resolveTheme('realistic', theme), 'realistic');
   }
   for (const [look] of LOOKS) assert.ok(isThemeKey(resolveTheme(look, 'parchment')));
   assert.ok(!isLook('parchment'), 'setting themes are not separate looks');
@@ -175,3 +177,23 @@ test('lighting leaves a map with no light sources untouched', () => {
   assert.equal(d.props.length, 0);
   assert.deepEqual(render(d, { ppg: 20, lighting: true }).rec.calls, render(d, { ppg: 20 }).rec.calls);
 });
+
+test('frozen rooms wash blue and scorching rooms red, only when turned on', () => {
+  const d = createBlankDungeon({ seed: 'tint', width: 24, height: 12 });
+  const room = (atmosphere: string) => ({
+    name: 'Chamber', kind: 'empty' as const, atmosphere, feature: 'a bare floor', monster: null, trap: null, special: null, treasure: null, note: null,
+  });
+  paintRoom(d, { x: 2, y: 3 }, { x: 7, y: 7 }, room('Frost rimes every metal surface.'));
+  paintRoom(d, { x: 14, y: 3 }, { x: 19, y: 7 }, room('Heat radiates from the walls like an oven.'));
+  paintCorridor(d, lineCells({ x: 8, y: 5 }, { x: 13, y: 5 }));
+  assert.deepEqual(d.rooms.map((r) => r.environment), ['frost', 'heat']);
+  assert.deepEqual(render(d, { ppg: 20, effects: false }).rec.calls, render(d, { ppg: 20 }).rec.calls, 'off by default');
+  const on = render(d, { ppg: 20, effects: true }).rec;
+  assert.deepEqual(render(d, { ppg: 20, effects: true }).rec.calls, on.calls, 'the same every time');
+  const gradients = on.calls.filter((c) => c.name === 'createRadialGradient').length;
+  assert.ok(gradients > 60, 'every square of both rooms, the corridor and each doorway');
+  const colours = (on.styles as { stops?: [number, string][] }[]).flatMap((s) => s.stops ?? []).map(([, c]) => c);
+  assert.ok(colours.some((c) => c.startsWith('rgba(61, 155, 255')), 'blue for frost');
+  assert.ok(colours.some((c) => c.startsWith('rgba(255, 59, 31')), 'red for heat');
+});
+

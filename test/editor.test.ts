@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PROP_KINDS, editorFree, fitProp, footprint, propAt, settingProps } from '../src/renderer/clutter.ts';
-import { clearMap, createBlankDungeon, cycleDoor, cycleStairs, edgeAt, eraseCells, lineCells, normalizeDungeon, paintCorridor, paintRoom, placeProp, rectCells, removeProp, restore, rotateProp, snapshot, stockNewRoom, togglePillar, toggleWindow } from '../src/renderer/editor.ts';
+import { clearMap, createBlankDungeon, cycleDoor, cycleStairs, edgeAt, eraseCells, lightAt, lineCells, normalizeDungeon, paintCorridor, paintRoom, placeLight, placeProp, rectCells, removeLight, removeProp, restore, rotateProp, setLightRadius, snapshot, stockNewRoom, togglePillar, toggleWindow } from '../src/renderer/editor.ts';
 import { buildFguModule } from '../src/renderer/export/fantasygrounds.ts';
 import { buildFoundryScene } from '../src/renderer/export/foundry.ts';
 import { buildRoomKeyMarkdown } from '../src/renderer/export/roomkey.ts';
@@ -92,10 +92,12 @@ test('random edits on generated maps never leave the dungeon inconsistent', () =
         case 3: cycleDoor(d, edgeAt(a.x + rng.float(), a.y + rng.float())); break;
         case 4: togglePillar(d, a); break;
         case 5: {
-          const k = rng.int(0, 2);
+          const k = rng.int(0, 4);
           if (k === 0) placeProp(d, a, rng.pick(PROP_KINDS));
           else if (k === 1) rotateProp(d, a);
-          else removeProp(d, a);
+          else if (k === 2) removeProp(d, a);
+          else if (k === 3) placeLight(d, a, rng.int(1, 8));
+          else removeLight(d, a);
           break;
         }
         default: cycleStairs(d, a);
@@ -232,9 +234,39 @@ test('a prop with no room to turn stays as it is', () => {
 
 test('Clear wipes everything, and does nothing on an empty map', () => {
   const d = generateDungeon({ seed: 'clear', windowChance: 1, clutter: 1 });
+  const room = d.rooms[0];
+  assert.ok(room && placeLight(d, { x: room.cx, y: room.cy }, 4));
   assert.ok(clearMap(d));
   assert.ok(d.cells.every((t) => t === ROCK) && d.roomIds.every((id) => id === -1));
-  assert.deepEqual([d.rooms, d.doors, d.windows, d.stairs, d.props], [[], [], [], [], []]);
+  assert.deepEqual([d.rooms, d.doors, d.windows, d.stairs, d.props, d.lights], [[], [], [], [], [], []]);
   assert.ok(d.edited);
   assert.ok(!clearMap(d));
+});
+
+test('lights go on floor, one per square; they can be resized and removed, and go when their floor does', () => {
+  const d = createBlankDungeon({ seed: 'lights', width: 20, height: 14 });
+  paintRoom(d, { x: 2, y: 2 }, { x: 8, y: 7 }, stockNewRoom(d, new RNG('l')));
+  assert.ok(!placeLight(d, { x: 12, y: 10 }, 4), 'not on rock');
+  assert.ok(!placeLight(d, { x: 0, y: 0 }, 4), 'not on the map edge');
+  assert.ok(placeLight(d, { x: 4, y: 4 }, 4));
+  assert.ok(!placeLight(d, { x: 4, y: 4 }, 6), 'one per square');
+  assert.deepEqual(d.lights, [{ x: 4, y: 4, radius: 4, room: 0 }]);
+  assert.ok(d.edited);
+
+  assert.ok(setLightRadius(d, { x: 4, y: 4 }, 8));
+  assert.equal(d.lights[0]?.radius, 8);
+  assert.ok(!setLightRadius(d, { x: 4, y: 4 }, 8), 'already that size');
+  assert.ok(!setLightRadius(d, { x: 5, y: 5 }, 2), 'no light there');
+
+  const before = snapshot(d);
+  assert.ok(removeLight(d, { x: 4, y: 4 }));
+  assert.equal(lightAt(d, { x: 4, y: 4 }), -1);
+  assert.ok(!removeLight(d, { x: 4, y: 4 }));
+  restore(d, before);
+  assert.equal(d.lights.length, 1, 'undo brings it back');
+
+  // Erasing the floor under a light takes the light with it.
+  eraseCells(d, [{ x: 4, y: 4 }]);
+  assert.deepEqual(d.lights, []);
+  assertConsistent(d, 'lights');
 });

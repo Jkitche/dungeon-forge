@@ -14,11 +14,14 @@ import type { PropPaintContext, PropPalette } from './props/index.ts';
 import { blob, bevel } from './props/draw.ts';
 import { castShadow, depthAmount, drawAmbientOcclusion, drawLighting, drawPropShadows, drawWallBevel, lightSources } from './depth.ts';
 import type { DepthLevel } from './depth.ts';
+import { fillPhoto, photoTexture, PHOTO_SQUARES } from './photo.ts';
+import { lightOccluders } from './raycast.ts';
+import { drawEnvironments } from './effects.ts';
 
 type RGB = readonly [number, number, number];
 
-export type RockStyle = 'none' | 'grid' | 'hatch' | 'speckle' | 'plating' | 'brick' | 'rubble';
-export type FloorStyle = 'plain' | 'flagstone' | 'deckplate' | 'planks' | 'checker' | 'concrete';
+export type RockStyle = 'none' | 'grid' | 'hatch' | 'speckle' | 'plating' | 'brick' | 'rubble' | 'photo';
+export type FloorStyle = 'plain' | 'flagstone' | 'deckplate' | 'planks' | 'checker' | 'concrete' | 'photo';
 export type DoorStyle = 'outline' | 'wood' | 'sliding' | 'hatch' | 'metal';
 export type StairStyle = 'steps' | 'lift' | 'ladder';
 export type PillarStyle = 'round' | 'square' | 'boiler';
@@ -65,7 +68,7 @@ export interface Theme {
   decor?: readonly DecorStyle[];
 }
 
-export type ThemeKey = 'parchment' | 'blueprint' | 'stone' | 'starship' | 'brass' | 'gothic' | 'wasteland';
+export type ThemeKey = 'parchment' | 'blueprint' | 'stone' | 'realistic' | 'starship' | 'brass' | 'gothic' | 'wasteland';
 
 const SERIF = 'Georgia, "Times New Roman", serif';
 
@@ -105,6 +108,20 @@ export const THEMES: Record<ThemeKey, Theme> = {
     props: { wood: '#6b4a2b', metal: '#5c5f63', cloth: '#7a2e2a', stone: '#8d877c', line: '#16130f', glow: '#ffb347', paper: '#d9cfb8' },
     rock: 'speckle', rockColors: ['#1d1b19', '#211f1c', '#191816', '#25221f'],
     floorStyle: 'flagstone', floorTone: [122, 116, 106],
+    doorStyle: 'wood', stairStyle: 'steps', pillarStyle: 'round',
+  },
+  // Photographic rock and cobbles. Falls back to Dark Stone's painters until they load.
+  realistic: {
+    label: 'Realistic',
+    bg: '#121314', floor: '#3c3934', grid: 'rgba(0, 0, 0, 0.45)',
+    wall: '#141210', wallWidth: 0.24, shadow: true,
+    door: '#6e4a2b', doorStroke: '#1e140a', stair: '#2a2622', stairFill: '#8e877c',
+    pillarFill: '#55504a', pillarStroke: '#141210',
+    text: '#f6eedc', halo: '#121314', font: SERIF, secretMark: '#e0b44c', lockMark: '#d9b25a',
+    windowGlass: '#9cc3cf', windowFrame: '#2a2622',
+    props: { wood: '#6b4a2b', metal: '#5c5f63', cloth: '#7a2e2a', stone: '#8d877c', line: '#16130f', glow: '#ffb347', paper: '#d9cfb8' },
+    rock: 'photo', rockColors: ['#1d1b19', '#211f1c', '#191816', '#25221f'],
+    floorStyle: 'photo', floorTone: [122, 116, 106],
     doorStyle: 'wood', stairStyle: 'steps', pillarStyle: 'round',
   },
   starship: {
@@ -171,12 +188,14 @@ export const THEMES: Record<ThemeKey, Theme> = {
 export const isThemeKey = (k: unknown): k is ThemeKey => typeof k === 'string' && Object.hasOwn(THEMES, k);
 
 /**
- * The user's choice of art: the theme that matches the map's setting, or one of the two
- * setting-neutral themes (old-school blue for print, dark stone for VTTs).
+ * The user's choice of art: the theme that matches the map's setting, or one of the
+ * setting-neutral themes (old-school blue for print, dark stone for VTTs, photographic).
  */
-export type Look = 'setting' | 'blueprint' | 'stone';
+export type Look = 'setting' | 'blueprint' | 'stone' | 'realistic';
 
-export const LOOKS: readonly [Look, string][] = [['setting', 'Setting'], ['blueprint', 'Blueprint'], ['stone', 'Dark Stone']];
+export const LOOKS: readonly [Look, string][] = [
+  ['setting', 'Setting'], ['blueprint', 'Blueprint'], ['stone', 'Dark Stone'], ['realistic', 'Realistic'],
+];
 
 export const isLook = (k: unknown): k is Look => LOOKS.some(([l]) => l === k);
 
@@ -195,6 +214,8 @@ export interface RenderOptions {
   depth?: DepthLevel;
   /** Dim the floor and add pools of light around braziers, screens and cryo pods. Default off. */
   lighting?: boolean;
+  /** Wash frozen rooms blue and scorching ones red, bleeding out through doorways. Default off. */
+  effects?: boolean;
 }
 
 type Ctx = CanvasRenderingContext2D;
@@ -243,8 +264,10 @@ export function renderDungeon(canvas: HTMLCanvasElement, d: Dungeon, opts: Rende
   ctx.clip(floorPath);
   FLOOR_PAINTERS[theme.floorStyle](p);
   runDecor('floor');
-  if (opts.showGrid ?? true) drawGridLines(p, theme.grid);
   if (p.depth > 0) drawAmbientOcclusion(ctx, d, ppg, p.depth, p.shade);
+  if (opts.effects) drawEnvironments(ctx, d, ppg);
+  // The grid goes on top, so squares stay visible through shading and tints.
+  if (opts.showGrid ?? true) drawGridLines(p, theme.grid);
   ctx.restore();
 
   for (const s of d.stairs) STAIR_PAINTERS[theme.stairStyle](p, s.x, s.y, s.dir, s.kind);
@@ -253,10 +276,11 @@ export function renderDungeon(canvas: HTMLCanvasElement, d: Dungeon, opts: Rende
   const lights = opts.lighting ? lightSources(d, theme.props) : [];
   if (lights.length > 0) {
     // Light and shade fall on the floor and what stands on it; walls and labels stay crisp.
+    // Walls, doors and pillars block the light, so it never leaks into the next room.
     // A map with no light sources is left as it is: dimming it would only muddy it.
     ctx.save();
     ctx.clip(floorPath);
-    drawLighting(ctx, lights, ppg, canvas.width, canvas.height, theme.shadow ? 0.42 : 0.14);
+    drawLighting(ctx, lights, ppg, canvas.width, canvas.height, theme.shadow ? 0.42 : 0.14, lightOccluders(d));
     ctx.restore();
   }
   runDecor('beforeWalls');
@@ -447,6 +471,13 @@ const ROCK_PAINTERS: Record<RockStyle, (p: Paint) => void> = {
       }
     });
   },
+
+  // A photograph of rock over the whole map, kept dark so the rooms stand out; speckle until it has loaded.
+  photo: (p) => {
+    const image = photoTexture('rock');
+    if (!image) return ROCK_PAINTERS.speckle(p);
+    fillPhoto(p.ctx, image, { ppg: p.ppg, extent: (p.d.width + p.d.height) * p.ppg, squares: PHOTO_SQUARES.rock, shade: 0.45 });
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -594,7 +625,33 @@ const FLOOR_PAINTERS: Record<FloorStyle, (p: Paint) => void> = {
       }
     });
   },
+
+  // A photograph of cobbles, or flagstones until it has loaded. Each room turns and shifts
+  // the tile its own way, so the same stones don't line up from room to room.
+  photo: (p) => {
+    const image = photoTexture('floor');
+    if (!image) return FLOOR_PAINTERS.flagstone(p);
+    const { ctx, d, ppg } = p;
+    const fill = { ppg, extent: (d.width + d.height) * ppg, squares: PHOTO_SQUARES.floor, shade: 0.15 };
+    fillPhoto(ctx, image, fill);
+    for (const r of d.rooms) {
+      const h = hash2(r.id, 0x5eed);
+      ctx.save();
+      ctx.clip(roomFloorPath(d, r.id, ppg));
+      fillPhoto(ctx, image, { ...fill, turns: h % 4, ox: (h >>> 2) % 7, oy: (h >>> 5) % 7 });
+      ctx.restore();
+    }
+  },
 };
+
+/** The open squares of one room. */
+function roomFloorPath(d: Dungeon, id: number, ppg: number): Path2D {
+  const path = new Path2D();
+  for (let c = 0; c < d.cells.length; c++) {
+    if (d.roomIds[c] === id && isOpen(d.cells[c] as number)) path.rect((c % d.width) * ppg, Math.floor(c / d.width) * ppg, ppg, ppg);
+  }
+  return path;
+}
 
 // ---------------------------------------------------------------------------
 // Walls, stairs, pillars

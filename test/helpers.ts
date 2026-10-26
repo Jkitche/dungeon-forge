@@ -74,6 +74,14 @@ export function assertConsistent(d: Dungeon, label: string): void {
       propSquares.add(c);
     }
   }
+  const lightSquares = new Set<number>();
+  for (const l of d.lights) {
+    const c = l.y * d.width + l.x;
+    assert.ok(isFloor(d.cells[c] as number), `${label}: lights on floor`);
+    assert.ok(!lightSquares.has(c), `${label}: one light per square`);
+    assert.equal(l.room, d.roomIds[c], `${label}: light knows its room`);
+    lightSquares.add(c);
+  }
 }
 
 export const unitLength = (segs: { x1: number; y1: number; x2: number; y2: number }[]): number =>

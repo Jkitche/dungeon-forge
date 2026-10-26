@@ -4,16 +4,18 @@ import { renderDungeon, LOOKS, isLook, resolveTheme } from './renderer.ts';
 import type { Look, RenderOptions } from './renderer.ts';
 import { DEPTH_LEVELS, isDepthLevel } from './depth.ts';
 import type { DepthLevel } from './depth.ts';
+import { ENVIRONMENTS } from './environment.ts';
 import { EXPORTERS, getExporter, createExportTarget } from './export/index.ts';
 import type { ExportContext, ExportStrategy, RenderRequest } from './export/index.ts';
 import { html, slugify } from './text.ts';
 import type { SafeHtml } from './text.ts';
 import { randomSeed } from './rng.ts';
 import { clearMap, createBlankDungeon, stockNewRoom } from './editor.ts';
-import { MapEditor, TOOLS } from './editor-ui.ts';
-import { PROP_KINDS, PROP_LABELS, settingProps } from './clutter.ts';
+import { LIGHT_RADII, MapEditor, TOOLS } from './editor-ui.ts';
+import { COVER_LABELS, PROP_KINDS, PROP_LABELS, PROP_SPECS, settingProps } from './clutter.ts';
 import type { PropKind } from './clutter.ts';
 import { GENRES, GENRE_KEYS, getGenre, isGenreKey } from './genres.ts';
+import { loadPhotoTextures } from './photo.ts';
 import type { DungeonForgeApi, MenuAction } from '../shared/ipc.ts';
 
 declare global {
@@ -45,6 +47,7 @@ interface StyleOptions {
   look: Look;
   depth: DepthLevel;
   lighting: boolean;
+  effects: boolean;
   showGrid: boolean;
   showLabels: boolean;
 }
@@ -74,7 +77,7 @@ const state: {
   exportFormat: string;
 } = {
   options: { ...DEFAULT_OPTIONS, seed: randomSeed() },
-  style: { look: 'setting', depth: 'subtle', lighting: false, showGrid: true, showLabels: true },
+  style: { look: 'setting', depth: 'subtle', lighting: false, effects: true, showGrid: true, showLabels: true },
   gmView: true,
   dungeon: null,
   mapCanvas: document.createElement('canvas'),
@@ -194,6 +197,7 @@ const CONTROLS: Section[] = [
       { key: 'look', type: 'segmented', label: 'Look', options: LOOKS },
       { key: 'depth', type: 'segmented', label: 'Depth', options: DEPTH_LEVELS },
       { key: 'lighting', type: 'check', label: 'Light sources' },
+      { key: 'effects', type: 'check', label: 'Room cold and heat' },
       { key: 'showGrid', type: 'check', label: 'Show grid' },
       { key: 'showLabels', type: 'check', label: 'Room numbers (GM view)' },
     ],
@@ -240,7 +244,8 @@ function buildControl(section: Section, item: ControlItem): { node: HTMLElement;
       return { node, control: bind((v) => (box.checked = Boolean(v))) };
     }
     case 'segmented': {
-      const group = el('div', { className: 'segmented' });
+      // More than three choices won't fit across the sidebar, so they go two to a row.
+      const group = el('div', { className: item.options.length > 3 ? 'segmented grid' : 'segmented' });
       group.setAttribute('role', 'group');
       group.setAttribute('aria-label', item.label);
       for (const [value, label] of item.options) {
@@ -305,6 +310,7 @@ function renderStyle(d: Dungeon): RenderOptions {
     theme: resolveTheme(state.style.look, getGenre(d.options.genre).theme),
     depth: state.style.depth,
     lighting: state.style.lighting,
+    effects: state.style.effects,
     showGrid: state.style.showGrid,
     showLabels: state.style.showLabels,
   };
@@ -448,6 +454,7 @@ function renderKey(): void {
     const tags = el('div');
     tags.append(el('span', { className: `tag ${c.kind}`, textContent: kindLabel[c.kind] ?? c.kind }));
     if (r.entrance || r.exit) tags.append(' ', el('span', { className: 'tag stairs', textContent: `${g.stairWord} ${r.entrance ? 'up' : 'down'}` }));
+    if (r.environment) tags.append(' ', el('span', { className: `tag env-${r.environment}`, textContent: ENVIRONMENTS[r.environment].label }));
     card.append(tags);
     card.append(el('p', { textContent: `${c.atmosphere} The room contains ${c.feature}.` }));
     if (c.note) card.append(el('p', { textContent: c.note }));
@@ -569,6 +576,11 @@ const editor = new MapEditor({
   toGrid,
   changed: () => {
     state.selected = -1;
+    // A placed light would be invisible with Light sources off, so placing one turns it on.
+    if (editor.tool === 'lighting' && dungeon().lights.length > 0 && !state.style.lighting) {
+      state.style.lighting = true;
+      syncControls();
+    }
     redrawMap();
     renderKey();
     updateStatus();
@@ -580,6 +592,7 @@ const editor = new MapEditor({
 
 const toolSelect = $<HTMLSelectElement>('edit-tool');
 const propSelect = $<HTMLSelectElement>('edit-prop');
+const radiusSelect = $<HTMLSelectElement>('edit-radius');
 
 function buildEditBar(): void {
   for (const tool of TOOLS) {
@@ -596,6 +609,12 @@ function buildEditBar(): void {
     propSelect.blur();
     drawView();
   });
+  for (const [radius, label] of LIGHT_RADII) radiusSelect.append(el('option', { value: String(radius), textContent: label }));
+  radiusSelect.addEventListener('change', () => {
+    editor.lightRadius = Number(radiusSelect.value);
+    radiusSelect.blur();
+    drawView();
+  });
 }
 
 /** Prop choices, the current setting's own props first. Rebuilt when the setting changes. */
@@ -607,7 +626,7 @@ function fillPropOptions(): void {
   const own = settingProps(genre);
   const group = (label: string, kinds: PropKind[]): HTMLOptGroupElement => {
     const g = el('optgroup', { label });
-    for (const k of kinds) g.append(el('option', { value: k, textContent: PROP_LABELS[k] }));
+    for (const k of kinds) g.append(el('option', { value: k, textContent: `${PROP_LABELS[k]} (${COVER_LABELS[PROP_SPECS[k].cover]})` }));
     return g;
   };
   propSelect.replaceChildren(
@@ -624,6 +643,8 @@ function syncEditBar(): void {
     fillPropOptions();
     propSelect.value = editor.propKind;
   }
+  $('edit-radius-field').hidden = editor.tool !== 'lighting';
+  radiusSelect.value = String(editor.lightRadius);
   const tool = TOOLS.find((t) => t.id === editor.tool);
   $('edit-hint').textContent = `${tool?.hint ?? ''} Right-drag or hold Space to pan.`;
   $<HTMLButtonElement>('btn-undo').disabled = !editor.canUndo;
@@ -670,9 +691,40 @@ async function saveMap(): Promise<void> {
     filters: [{ name: 'Dungeon Forge map', extensions: ['json'] }],
   });
   if (!path) return;
-  const project: ProjectFile = { app: 'dungeon-forge', version: 1, style: state.style, dungeon: serializeDungeon(d) };
-  await window.api.writeFiles([{ path, data: JSON.stringify(project), encoding: 'utf8' }]);
+  await window.api.writeFiles([{ path, data: projectJson(), encoding: 'utf8' }]);
   toast(`Saved ${basename(path)}`);
+}
+
+/** The current map and style, as saved in a .dungeon.json file. */
+function projectJson(): string {
+  const project: ProjectFile = { app: 'dungeon-forge', version: 1, style: state.style, dungeon: serializeDungeon(dungeon()) };
+  return JSON.stringify(project);
+}
+
+/** Replaces the current map and style with a saved project. Throws if it isn't one. */
+function loadProject(text: string): void {
+  const project = JSON.parse(text) as Partial<ProjectFile>;
+  if (project.app !== 'dungeon-forge') throw new Error('This file was not saved by Dungeon Forge');
+  const d = deserializeDungeon(project.dungeon);
+  state.dungeon = d;
+  editor.reset();
+  state.options = normalizeOptions(d.options);
+  // Maps saved before the Look switch stored a theme name instead.
+  const style = project.style as Partial<StyleOptions> & { theme?: string } | undefined;
+  const legacyLook = style?.theme === 'blueprint' || style?.theme === 'stone' ? style.theme : 'setting';
+  state.style = {
+    look: isLook(style?.look) ? style.look : legacyLook,
+    depth: isDepthLevel(style?.depth) ? style.depth : state.style.depth,
+    lighting: style?.lighting ?? state.style.lighting,
+    effects: style?.effects ?? state.style.effects,
+    showGrid: style?.showGrid ?? state.style.showGrid,
+    showLabels: style?.showLabels ?? state.style.showLabels,
+  };
+  state.selected = -1;
+  syncControls();
+  redrawMap();
+  renderKey();
+  updateStatus();
 }
 
 async function openMap(): Promise<void> {
@@ -680,27 +732,7 @@ async function openMap(): Promise<void> {
   const file = await window.api.openFile({ title: 'Open map', filters: [{ name: 'Dungeon Forge map', extensions: ['json'] }] });
   if (!file) return;
   try {
-    const project = JSON.parse(file.text) as Partial<ProjectFile>;
-    if (project.app !== 'dungeon-forge') throw new Error('This file was not saved by Dungeon Forge');
-    const d = deserializeDungeon(project.dungeon);
-    state.dungeon = d;
-    editor.reset();
-    state.options = normalizeOptions(d.options);
-    // Maps saved before the Look switch stored a theme name instead.
-    const style = project.style as Partial<StyleOptions> & { theme?: string } | undefined;
-    const legacyLook = style?.theme === 'blueprint' || style?.theme === 'stone' ? style.theme : 'setting';
-    state.style = {
-      look: isLook(style?.look) ? style.look : legacyLook,
-      depth: isDepthLevel(style?.depth) ? style.depth : state.style.depth,
-      lighting: style?.lighting ?? state.style.lighting,
-      showGrid: style?.showGrid ?? state.style.showGrid,
-      showLabels: style?.showLabels ?? state.style.showLabels,
-    };
-    state.selected = -1;
-    syncControls();
-    redrawMap();
-    renderKey();
-    updateStatus();
+    loadProject(file.text);
     fitView();
     toast(`Opened ${basename(file.path)}`);
   } catch (err) {
@@ -783,13 +815,15 @@ function createExportContext(): ExportContext {
     ppg,
     grid,
     gmView,
-    renderPng: (req: RenderRequest = {}) =>
-      canvasToBytes(renderDungeon(document.createElement('canvas'), d, {
+    renderPng: async (req: RenderRequest = {}) => {
+      await photosReady;
+      return canvasToBytes(renderDungeon(document.createElement('canvas'), d, {
         ...style,
         ppg: req.ppg ?? ppg,
         showGrid: req.grid ?? grid,
         gmView: req.gmView ?? gmView,
-      })),
+      }));
+    },
   };
 }
 
@@ -945,4 +979,35 @@ window.api.onMenu((action) => actions[action]?.());
 
 buildControls();
 buildEditBar();
-generate({ fit: true });
+
+// Reloading the window (as `npm run dev` does after every change) keeps the map, its
+// style, the view and edit mode, rather than starting over with a new random dungeon.
+const RELOAD_KEY = 'dungeon-forge:reload';
+window.addEventListener('beforeunload', () => {
+  try {
+    sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ project: projectJson(), view: state.view, gmView: state.gmView, editing: editor.active }));
+  } catch {
+    // Too big to keep, or storage is off: the reload just starts fresh.
+  }
+});
+function restoreAfterReload(): boolean {
+  try {
+    const saved = sessionStorage.getItem(RELOAD_KEY);
+    sessionStorage.removeItem(RELOAD_KEY);
+    if (!saved) return false;
+    const { project, view, gmView, editing } = JSON.parse(saved) as { project: string; view: typeof state.view; gmView: boolean; editing: boolean };
+    loadProject(project);
+    state.gmView = gmView;
+    syncControls();
+    redrawMap();
+    if (editing) setEditing(true);
+    state.view = view;
+    drawView();
+    return true;
+  } catch {
+    return false;
+  }
+}
+if (!restoreAfterReload()) generate({ fit: true });
+// The Realistic look draws hand-drawn stand-ins until its photographs arrive, then redraws.
+const photosReady = loadPhotoTextures(new URL('./assets/textures/', import.meta.url)).then(redrawMap);

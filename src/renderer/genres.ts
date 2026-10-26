@@ -99,6 +99,8 @@ export const GENRES: Record<GenreKey, Genre> = {
       "Wine Cellar",
     ],
     caveNames: [
+      "Frozen Lake",
+      "Lava Tube",
       "Grotto",
       "Fungus Garden",
       "Underground Pool",
@@ -117,6 +119,8 @@ export const GENRES: Record<GenreKey, Genre> = {
       "Chasm Ledge",
     ],
     atmospheres: [
+      "Flames lick up from cracks in the floor.",
+      "A sheet of ice covers the floor.",
       "Damp air smells of mildew.",
       "Cobwebs drape every corner.",
       "A cold draft whistles through cracks in the stone.",
@@ -274,6 +278,8 @@ export const GENRES: Record<GenreKey, Genre> = {
       "Spore Garden",
     ],
     atmospheres: [
+      "An electrical fire burns behind a wall panel.",
+      "Ice crusts the deck where a coolant pipe burst.",
       "Emergency lights bathe everything in pulsing red.",
       "The air recyclers have failed; breath fogs in the cold.",
       "A klaxon loops a muffled warning somewhere nearby.",
@@ -407,6 +413,7 @@ export const GENRES: Record<GenreKey, Genre> = {
       "Observatory",
     ],
     caveNames: [
+      "Molten Slag Run",
       "Coal Seam",
       "Flooded Mine Gallery",
       "Steam Vent Grotto",
@@ -421,6 +428,7 @@ export const GENRES: Record<GenreKey, Genre> = {
       "Old Catacomb",
     ],
     atmospheres: [
+      "A furnace door hangs open, flames roaring within.",
       "Steam hisses from leaking valves.",
       "The rhythmic clank of distant machinery never stops.",
       "Coal smoke hangs thick under the ceiling.",
@@ -554,6 +562,7 @@ export const GENRES: Record<GenreKey, Genre> = {
       "Ossuary",
     ],
     caveNames: [
+      "Webbed Hollow",
       "Catacomb",
       "Plague Pit",
       "Flooded Crypt",
@@ -568,6 +577,8 @@ export const GENRES: Record<GenreKey, Genre> = {
       "Charnel Hollow",
     ],
     atmospheres: [
+      "Icicles hang from the ceiling like teeth.",
+      "Thick webs shroud the corners.",
       "Candles gutter though there is no draft.",
       "Whispers stop the moment anyone speaks.",
       "The portraits' eyes seem to follow you.",
@@ -701,6 +712,7 @@ export const GENRES: Record<GenreKey, Genre> = {
       "Workshop",
     ],
     caveNames: [
+      "Burning Oil Well",
       "Collapsed Subway",
       "Sewer Junction",
       "Rad Pool",
@@ -715,6 +727,7 @@ export const GENRES: Record<GenreKey, Genre> = {
       "Squatter Camp",
     ],
     atmospheres: [
+      "A tire fire still burns in one corner.",
       "A Geiger counter would click steadily here.",
       "Wind whistles through bullet holes in the walls.",
       "Faded propaganda posters peel from the walls.",

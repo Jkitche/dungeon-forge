@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron';
 import type { MenuItemConstructorOptions } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { watchFile } from 'node:fs';
 import type { MenuAction, OpenRequest, OpenedFile, SaveRequest, WriteRequest } from '../shared/ipc.ts';
 
 // Compiled layout: dist/main/main.js, dist/main/preload.cjs, dist/renderer/index.html
@@ -34,6 +35,11 @@ function createWindow(): void {
   win.on('closed', () => {
     win = null;
   });
+}
+
+// Under `npm run dev`, the dev script touches this file after each renderer rebuild.
+if (process.env.DUNGEON_FORGE_DEV) {
+  watchFile(path.join(here, '..', '.reload'), { interval: 100 }, () => win?.webContents.reloadIgnoringCache());
 }
 
 const send = (action: MenuAction) => () => win?.webContents.send('menu', action);

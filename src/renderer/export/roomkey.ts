@@ -3,6 +3,7 @@
 import { doorSummary } from '../generator.ts';
 import type { Dungeon, Room } from '../generator.ts';
 import { getGenre } from '../genres.ts';
+import { ENVIRONMENTS } from '../environment.ts';
 import type { Genre } from '../genres.ts';
 import { html } from '../text.ts';
 import type { ExportContext, ExportResult, ExportStrategy, ExportTarget } from './types.ts';
@@ -13,6 +14,7 @@ function roomLines(r: Room, g: Genre): string[] {
   const tags = [r.entrance && 'entrance', r.exit && 'exit'].filter(Boolean);
   lines.push(`## ${r.id + 1}. ${c?.name ?? 'Room'}${tags.length ? ` (${tags.join(', ')})` : ''}`);
   if (r.shape !== 'area') lines.push(`*${r.w * 5} × ${r.h * 5} ft${r.shape !== 'rect' ? `, ${r.shape}` : ''}.*`);
+  if (r.environment) lines.push(`**Condition:** ${ENVIRONMENTS[r.environment].label}`);
   lines.push('');
   lines.push(`${c?.atmosphere ?? ''} The room contains ${c?.feature ?? 'nothing of note'}.`.trim());
   if (c?.note) lines.push('', c.note);

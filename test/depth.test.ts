@@ -10,6 +10,7 @@ import { PROP_RENDERERS } from '../src/renderer/props/index.ts';
 import { PROP_KINDS } from '../src/renderer/clutter.ts';
 import { computeWalls, eachWallUnit } from '../src/renderer/walls.ts';
 import { RNG } from '../src/renderer/rng.ts';
+import { lightLayers, lightOccluders } from '../src/renderer/raycast.ts';
 import { recordingContext, TEST_PALETTE } from './helpers.ts';
 
 /** A 6x4 room with a pillar, a window, a brazier, a console and a rug. */
@@ -100,6 +101,19 @@ test('props cast shadows by height: flat props none, tall props further', () => 
   assert.match(String(rec.ctx.filter), /^blur\(/);
 });
 
+test('placed lights shine too, and a light set on a prop is not shaded by it', () => {
+  const d = furnishedRoom();
+  d.lights.push({ x: 7, y: 5, radius: 6, room: 0 }, { x: 5, y: 4, radius: 2, room: 0 });
+  const lights = lightSources(d, TEST_PALETTE);
+  assert.equal(lights.length, 4);
+  const [, , open, onProp] = lights;
+  assert.deepEqual(open, { x: 7.5, y: 5.5, radius: 6, colour: TEST_PALETTE.glow });
+  assert.ok(placeProp(d, { x: 5, y: 4 }, 'crate'));
+  const crate = d.props.findIndex((p) => p.kind === 'crate');
+  assert.equal(lightSources(d, TEST_PALETTE)[3]?.prop, crate);
+  assert.equal(onProp?.prop, undefined, 'before the crate was there');
+});
+
 test('light comes from braziers and screens, not windows', () => {
   const d = furnishedRoom();
   assert.equal(d.windows.length, 1);
@@ -120,4 +134,18 @@ test('lighting dims the floor once, then adds one pool per light, restoring the 
   assert.deepEqual(rec.calls[1], { name: 'fillRect', args: [0, 0, 640, 480] });
   assert.equal(rec.ctx.globalCompositeOperation, 'lighter', 'light is added, not painted over');
   assert.equal(rec.calls.filter((c) => c.name === 'createRadialGradient').length, lights.length);
+});
+
+test('with occluders, each light is clipped to what it can see, in cover layers, from several spots for soft edges', () => {
+  const d = furnishedRoom();
+  const lights = lightSources(d, TEST_PALETTE);
+  const occluders = lightOccluders(d);
+  const layers = lights.map((l) => lightLayers(occluders, l.prop).length);
+  // The console's half cover shades the brazier's light, but not the console's own glow.
+  assert.deepEqual(layers, [2, 1]);
+  const rec = recordingContext();
+  drawLighting(rec.ctx, lights, 40, 640, 480, 0.4, occluders);
+  assert.equal(rec.calls.filter((c) => c.name === 'clip').length, 3 * 5, 'five samples per layer');
+  assert.equal(rec.calls.filter((c) => c.name === 'createRadialGradient').length, 3, 'one gradient per layer');
+  assert.equal(rec.calls.filter((c) => c.name === 'save').length, rec.calls.filter((c) => c.name === 'restore').length);
 });

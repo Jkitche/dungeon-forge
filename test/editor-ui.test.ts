@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MapEditor, TOOLS } from '../src/renderer/editor-ui.ts';
+import { LIGHT_RADII, MapEditor, TOOLS } from '../src/renderer/editor-ui.ts';
 import type { EditorHost } from '../src/renderer/editor-ui.ts';
 import { createBlankDungeon, stockNewRoom } from '../src/renderer/editor.ts';
 import { CORRIDOR, ROCK, ROOM } from '../src/renderer/cells.ts';
@@ -249,4 +249,56 @@ test('the overlay previews drags and hovers, and draws nothing when inactive', (
   const drawing = overlay().calls.filter((c) => c.name !== 'save' && c.name !== 'restore');
   assert.equal(drawing.length, 0, 'nothing once the pointer leaves');
   assert.ok(h.redraws() > 0);
+});
+
+test('the Lighting tool places lights of the chosen radius; clicking removes one, Shift-click resizes it', () => {
+  const h = harness();
+  drag(h.editor, [[3.5, 3.5], [10.5, 9.5]]);
+  h.editor.setTool('lighting');
+  h.editor.lightRadius = 6;
+  click(h.editor, 5.5, 5.5);
+  assert.deepEqual(h.d.lights.map((l) => [l.x, l.y, l.radius]), [[5, 5, 6]]);
+  click(h.editor, 20.5, 15.5);
+  assert.equal(h.d.lights.length, 1, 'not on rock');
+
+  h.editor.lightRadius = 2;
+  click(h.editor, 5.5, 5.5, true);
+  assert.equal(h.d.lights[0]?.radius, 2, 'Shift-click gives it the chosen radius');
+  click(h.editor, 5.5, 5.5);
+  assert.equal(h.d.lights.length, 0, 'a plain click removes it');
+  h.editor.undo();
+  assert.equal(h.d.lights.length, 1);
+});
+
+test('radius choices run from candle to 60 ft, smallest first', () => {
+  const radii = LIGHT_RADII.map(([r]) => r);
+  assert.deepEqual(radii, [...radii].sort((a, b) => a - b));
+  assert.equal(radii[0], 1);
+  assert.equal(radii.at(-1), 12);
+  assert.ok(LIGHT_RADII.some(([r, label]) => r === 4 && label.includes('torch')));
+});
+
+test('the Lighting tool shows every light and its reach, and where a new one would go', () => {
+  const h = harness();
+  drag(h.editor, [[3.5, 3.5], [10.5, 9.5]]);
+  h.editor.setTool('lighting');
+  click(h.editor, 5.5, 5.5);
+  const overlay = (): ReturnType<typeof recordingContext> => {
+    const rec = recordingContext();
+    h.editor.drawOverlay(rec.ctx, 40);
+    return rec;
+  };
+  const arcs = (rec: ReturnType<typeof recordingContext>) => rec.calls.filter((c) => c.name === 'arc').map((c) => c.args[2]);
+
+  h.editor.lightRadius = 3;
+  h.editor.pointerMove(at(8.5, 7.5));
+  assert.deepEqual(arcs(overlay()), [40 * 0.14, 4 * 40, 3 * 40], 'the light, its reach, and a new one\'s reach');
+  h.editor.pointerMove(at(5.5, 5.5));
+  assert.deepEqual(arcs(overlay()), [40 * 0.14, 4 * 40], 'over a light: no new ring');
+  h.editor.pointerMove(at(20.5, 15.5));
+  assert.ok(overlay().styles.some((st) => String(st).startsWith('rgba(220, 70, 60')), 'red over rock');
+
+  h.editor.setTool('clutter');
+  h.editor.pointerMove(at(8.5, 7.5));
+  assert.deepEqual(arcs(overlay()), [], 'other tools hide the lights');
 });

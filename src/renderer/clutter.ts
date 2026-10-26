@@ -19,6 +19,12 @@ export interface Prop {
   room: number;
 }
 
+/**
+ * How much a prop blocks, using D&D's cover levels. For lighting, full cover stops light
+ * entirely, three-quarters lets a quarter through, half lets half through, none lets it all.
+ */
+export type Cover = 'none' | 'half' | 'three-quarters' | 'full';
+
 interface PropSpec {
   /** Two squares long instead of one. */
   long: boolean;
@@ -26,24 +32,29 @@ interface PropSpec {
   place: 'wall' | 'center' | 'any';
   /** Fits in natural caverns. */
   cave: boolean;
+  cover: Cover;
 }
 
 export const PROP_SPECS: Record<PropKind, PropSpec> = {
-  crate: { long: false, place: 'any', cave: true },
-  barrel: { long: false, place: 'any', cave: true },
-  chest: { long: false, place: 'wall', cave: true },
-  table: { long: true, place: 'center', cave: false },
-  bed: { long: true, place: 'wall', cave: false },
-  shelf: { long: true, place: 'wall', cave: false },
-  rug: { long: true, place: 'center', cave: false },
-  rubble: { long: false, place: 'any', cave: true },
-  bones: { long: false, place: 'any', cave: true },
-  statue: { long: false, place: 'center', cave: true },
-  brazier: { long: false, place: 'any', cave: true },
-  console: { long: true, place: 'wall', cave: false },
-  coffin: { long: true, place: 'center', cave: false },
-  pod: { long: true, place: 'wall', cave: false },
+  crate: { long: false, place: 'any', cave: true, cover: 'half' },
+  barrel: { long: false, place: 'any', cave: true, cover: 'half' },
+  chest: { long: false, place: 'wall', cave: true, cover: 'half' },
+  table: { long: true, place: 'center', cave: false, cover: 'none' },
+  bed: { long: true, place: 'wall', cave: false, cover: 'none' },
+  shelf: { long: true, place: 'wall', cave: false, cover: 'full' },
+  rug: { long: true, place: 'center', cave: false, cover: 'none' },
+  rubble: { long: false, place: 'any', cave: true, cover: 'half' },
+  bones: { long: false, place: 'any', cave: true, cover: 'none' },
+  statue: { long: false, place: 'center', cave: true, cover: 'three-quarters' },
+  // A light source: it lights its surroundings rather than shading them.
+  brazier: { long: false, place: 'any', cave: true, cover: 'none' },
+  console: { long: true, place: 'wall', cave: false, cover: 'half' },
+  coffin: { long: true, place: 'center', cave: false, cover: 'half' },
+  pod: { long: true, place: 'wall', cave: false, cover: 'three-quarters' },
 };
+
+/** Shown beside each prop in the editor. */
+export const COVER_LABELS: Record<Cover, string> = { none: 'no cover', half: 'half cover', 'three-quarters': '¾ cover', full: 'full cover' };
 
 export const PROP_KINDS = Object.keys(PROP_SPECS) as PropKind[];
 
@@ -53,15 +64,16 @@ export const PROP_LABELS: Record<PropKind, string> = {
 };
 
 /**
- * Relative weights per setting. A weight of 0 means the prop only appears where a room's
- * name calls for it (coffins in a fantasy crypt, say).
+ * Each setting's props, with their weights in rooms whose name calls for nothing in
+ * particular. A weight of 0 means the prop only appears where a room's name calls for it
+ * (coffins in a fantasy crypt, say).
  */
 const GENRE_CLUTTER: Record<GenreKey, Partial<Record<PropKind, number>>> = {
   fantasy: { crate: 3, barrel: 3, chest: 1, table: 2, bed: 1, shelf: 2, rug: 1, rubble: 2, bones: 1, statue: 1, brazier: 1, coffin: 0 },
-  scifi: { crate: 3, console: 3, pod: 1, shelf: 2, table: 1, bed: 1, barrel: 2, rubble: 1 },
-  steampunk: { crate: 3, barrel: 3, table: 2, shelf: 2, chest: 1, console: 1, rug: 1, rubble: 1, bed: 0, coffin: 0 },
-  horror: { coffin: 2, table: 1, shelf: 2, rug: 2, bones: 2, statue: 1, brazier: 2, bed: 1, chest: 1, crate: 0, barrel: 0 },
-  wasteland: { barrel: 4, crate: 3, rubble: 4, bones: 1, table: 1, bed: 1, shelf: 1, console: 0 },
+  scifi: { crate: 3, console: 3, pod: 1, shelf: 2, table: 1, bed: 1, barrel: 2, rubble: 1, bones: 0 },
+  steampunk: { crate: 3, barrel: 3, table: 2, shelf: 2, chest: 1, console: 1, rug: 1, rubble: 1, bed: 0, coffin: 0, brazier: 0, statue: 0, bones: 0 },
+  horror: { coffin: 2, table: 1, shelf: 2, rug: 2, bones: 2, statue: 1, brazier: 2, bed: 1, chest: 1, crate: 0, barrel: 0, rubble: 0 },
+  wasteland: { barrel: 4, crate: 3, rubble: 4, bones: 1, table: 1, bed: 1, shelf: 1, console: 0, chest: 0, brazier: 0 },
 };
 
 /** The props a setting uses, including ones it only uses where a room calls for them. */
@@ -69,37 +81,97 @@ export function settingProps(genre: GenreKey): PropKind[] {
   return Object.keys(GENRE_CLUTTER[genre]) as PropKind[];
 }
 
-/** Room names that call for particular props. Only kinds the setting allows are used. */
-const ROOM_HINTS: readonly [RegExp, readonly PropKind[]][] = [
-  [/librar|scriptor|archive|study|map room|drafting|patent/, ['shelf', 'table']],
-  [/barrack|quarters|bedchamber|cells|nursery|bunk|dormitor/, ['bed']],
-  [/kitchen|mess|banquet|lounge|parlour|dining|tavern|larder/, ['table', 'barrel']],
-  [/armory|weapon|trophy|smithy/, ['shelf', 'crate']],
-  [/vault|treasur|counting|reliquary/, ['chest']],
-  [/crypt|ossuary|mausoleum|tomb|morgue|catacomb|bone|charnel|embalm/, ['coffin', 'bones']],
-  [/shrine|chapel|altar|temple|summoning|séance|seance/, ['statue', 'brazier', 'rug']],
-  [/store|cargo|storage|depot|cellar|hold|warehouse|supply|scrapyard|trading/, ['crate', 'barrel']],
-  [/lab|engineering|server|bridge|comms|command|control|radio|telegraph|workshop|reactor|life support/, ['console', 'table']],
-  [/cryo|med bay|infirmary|containment/, ['pod', 'bed']],
-  [/throne|ballroom|gallery|great hall|observ/, ['rug', 'statue']],
+type Weights = Partial<Record<PropKind, number>>;
+
+/**
+ * What each kind of room is furnished with, by room name. Checked in order and the first
+ * match wins, so specific names come before general ones ("alchemy lab" before "lab",
+ * "bone gallery" before "gallery"). A matching room is furnished only from its own list;
+ * kinds the setting never uses are dropped. Rooms that match nothing get the setting's
+ * general mix.
+ */
+const ROOM_FURNISHINGS: readonly [RegExp, Weights][] = [
+  // Workrooms and offices
+  [/alchemy|chemical lab/, { table: 3, shelf: 3, barrel: 1, brazier: 1 }],
+  [/telegraph|radio|comms|pneumatic post/, { console: 4, table: 2, shelf: 2 }],
+  [/bridge|command|control|server|security station|engineering/, { console: 5, table: 1, shelf: 1 }],
+  [/\blab\b/, { console: 3, table: 3, shelf: 2, pod: 1 }],
+  [/library|scriptor|archive|study|map room|drafting|patent|overseer/, { shelf: 4, table: 3, rug: 1, chest: 1 }],
+  [/counting/, { table: 3, chest: 3, shelf: 2 }],
+  [/workshop|clockwork|automaton|garage|maintenance|drill/, { table: 4, shelf: 2, crate: 2, barrel: 1, rubble: 1 }],
+  [/smithy|foundry/, { brazier: 3, table: 2, barrel: 2, crate: 1 }],
+  [/boiler|engine hall|generator|reactor/, { console: 3, barrel: 3, crate: 2 }],
+  [/purifier|pump|life support/, { console: 3, barrel: 3, crate: 1 }],
+  [/observ/, { table: 2, console: 2, shelf: 1, statue: 1, rug: 1 }],
+  // Medical and holding
+  [/cryo/, { pod: 5, console: 2 }],
+  [/containment|decontamination/, { pod: 3, console: 2, crate: 1 }],
+  [/med bay|infirmary/, { bed: 4, shelf: 2, console: 1, table: 1 }],
+  [/morgue|embalm/, { table: 3, coffin: 2, shelf: 2 }],
+  [/torture/, { table: 3, bones: 2, brazier: 2, barrel: 1 }],
+  [/prison|cells|brig|holding|asylum/, { bed: 3, bones: 2, barrel: 1, rubble: 1 }],
+  // Living quarters
+  [/meditation/, { rug: 3, brazier: 2, statue: 1 }],
+  [/barrack|crew quarters|bunk|dormitor/, { bed: 5, chest: 2, table: 1, shelf: 1 }],
+  [/bedchamber|nursery/, { bed: 3, rug: 2, chest: 2, shelf: 1 }],
+  [/guard|security/, { table: 3, crate: 1, barrel: 1, shelf: 1, brazier: 1 }],
+  [/kitchen|larder/, { table: 3, barrel: 3, crate: 2, shelf: 2 }],
+  [/mess|banquet|dining|servants/, { table: 5, barrel: 1, rug: 1 }],
+  [/séance|seance/, { table: 3, rug: 2, brazier: 2 }],
+  [/lounge|parlour/, { rug: 4, table: 3, shelf: 1 }],
+  [/steam baths/, { barrel: 3, rug: 1, table: 1 }],
+  [/hydroponics|greenhouse|conservatory|fungus farm|brewery/, { table: 3, barrel: 3, crate: 2, shelf: 1 }],
+  // Grand rooms and worship
+  [/throne|great hall/, { rug: 4, statue: 2, brazier: 2, table: 1 }],
+  [/ballroom|portrait|trophy/, { statue: 3, rug: 3, shelf: 1 }],
+  [/summoning|witch/, { brazier: 4, bones: 2, statue: 1 }],
+  [/chapel|shrine|altar|temple/, { statue: 3, brazier: 3, rug: 2 }],
+  [/vault|treasur|reliquary/, { chest: 5, shelf: 2, statue: 1 }],
+  [/armory|weapon/, { shelf: 4, crate: 2, chest: 2, table: 1 }],
+  // The dead
+  [/crypt|ossuary|mausoleum|tomb|catacomb|burial|charnel/, { coffin: 4, bones: 3, statue: 1, brazier: 1 }],
+  [/bone|plague|ghoul|blood/, { bones: 5, rubble: 2 }],
+  [/kennel|lair|nest|roost|warren|hive|egg/, { bones: 4, rubble: 3 }],
+  // Storage and camps
+  [/wine/, { barrel: 5, shelf: 2, crate: 1 }],
+  [/trading/, { table: 3, crate: 3, barrel: 2, chest: 1 }],
+  [/smuggl/, { crate: 4, barrel: 3, chest: 2 }],
+  [/store|cargo|storage|depot|cellar|warehouse|supply|scrap|shuttle bay|airship|airlock|bell tower|lift|descent/, { crate: 4, barrel: 4, chest: 1, shelf: 1 }],
+  [/camp/, { barrel: 3, crate: 3, brazier: 2, rubble: 1 }],
+  [/foyer|entrance/, { rug: 3, statue: 2, table: 1 }],
+  // Workings and ruins
+  [/mine|ore|coal|excavation|slag|oil well|rail|subway|sewer|parking|mall/, { rubble: 5, crate: 2, barrel: 2 }],
+  [/collapsed|crater|chasm|rad pool|toxic|sump/, { rubble: 5, bones: 1, barrel: 1 }],
+  // Natural caverns: loose rock, and the odd remains of something that didn't get out
+  [/lake|pool|grotto|cistern|spring|cavern|hollow|vug|vent|lava|garden|forest|bloom|well|chamber|tube|ledge|pocket|flooded/, { rubble: 4, bones: 1 }],
 ];
 
-const HINT_WEIGHT = 4;
-
-/** Weighted list of prop kinds for a room, e.g. ['crate', 'crate', 'barrel', ...]. */
-export function propPool(genre: GenreKey, roomName: string, cave: boolean): PropKind[] {
-  const weights: Partial<Record<PropKind, number>> = { ...GENRE_CLUTTER[genre] };
+/** The furnishings a room's name calls for, or null if it matches no rule. */
+export function roomFurnishings(roomName: string): Weights | null {
   const name = roomName.toLowerCase();
-  for (const [pattern, kinds] of ROOM_HINTS) {
-    if (!pattern.test(name)) continue;
-    for (const k of kinds) if (Object.hasOwn(weights, k)) weights[k] = (weights[k] ?? 0) + HINT_WEIGHT;
-  }
+  return ROOM_FURNISHINGS.find(([pattern]) => pattern.test(name))?.[1] ?? null;
+}
+
+function weightedPool(weights: Weights, cave: boolean): PropKind[] {
   const pool: PropKind[] = [];
   for (const [k, w] of Object.entries(weights) as [PropKind, number][]) {
     if (cave && !PROP_SPECS[k].cave) continue;
     for (let i = 0; i < w; i++) pool.push(k);
   }
   return pool;
+}
+
+/**
+ * Weighted list of prop kinds for a room, e.g. ['shelf', 'shelf', 'table', ...]: what its
+ * name calls for, limited to the setting's props (and to ones that fit a cavern), or the
+ * setting's general mix when the name calls for nothing that fits.
+ */
+export function propPool(genre: GenreKey, roomName: string, cave: boolean): PropKind[] {
+  const setting = GENRE_CLUTTER[genre];
+  const wanted = roomFurnishings(roomName) ?? {};
+  const fitting = Object.fromEntries(Object.entries(wanted).filter(([k]) => Object.hasOwn(setting, k)));
+  const pool = weightedPool(fitting, cave);
+  return pool.length > 0 ? pool : weightedPool(setting, cave);
 }
 
 /** The squares a prop covers. */

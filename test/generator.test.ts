@@ -98,6 +98,15 @@ test('maps saved before windows existed still open', () => {
   assert.deepEqual(deserializeDungeon(saved).windows, []);
 });
 
+test('placed lights are saved, and maps saved before the Lighting tool still open', () => {
+  const d = generateDungeon({ seed: 'old-lights' });
+  d.lights.push({ x: 3, y: 4, radius: 6, room: 0 });
+  const saved = JSON.parse(JSON.stringify(serializeDungeon(d)));
+  assert.deepEqual(deserializeDungeon(saved).lights, [{ x: 3, y: 4, radius: 6, room: 0 }]);
+  delete saved.lights;
+  assert.deepEqual(deserializeDungeon(saved).lights, []);
+});
+
 test('maps saved before clutter existed still open', () => {
   const saved = JSON.parse(JSON.stringify(serializeDungeon(generateDungeon({ seed: 'old-clutter' }))));
   delete saved.props;

@@ -86,12 +86,15 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accen
 .control { margin-bottom: 10px; }
 .control label { display: flex; justify-content: space-between; margin-bottom: 4px; }
 .control .value { color: var(--accent); font-variant-numeric: tabular-nums; }
-.control input[type="range"] { width: 100%; accent-color: var(--accent); }
+.control input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
 .control select { width: 100%; }
 .control.check label { justify-content: flex-start; gap: 8px; cursor: pointer; }
 .control.check input { accent-color: var(--accent); }
 .control .segmented { display: flex; width: 100%; }
 .control .segmented button { flex: 1; padding: 5px 4px; font-size: 12px; white-space: nowrap; }
+.control .segmented.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.control .segmented.grid button { border-radius: var(--radius); border-left: 1px solid var(--border); }
+.control .segmented.grid button.active { border-color: #565766; }
 
 .stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .viewport {
@@ -176,6 +179,17 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accen
 .tag.special { background: #2c3b62; color: #b4c6f2; }
 .tag.empty { background: #33343d; color: #aaa79f; }
 .tag.stairs { background: #234b3a; color: #a6e3c6; }
+.tag.env-frost { background: #23435c; color: #cfeaff; }
+.tag.env-heat { background: #5c2c14; color: #ffc69a; }
+.tag.env-fungus { background: #2d4a22; color: #c6f0a8; }
+.tag.env-toxic { background: #3f4d12; color: #e2ff9a; }
+.tag.env-water { background: #1e3a5c; color: #a8cfff; }
+.tag.env-smoke { background: #3a3a3a; color: #d6d6d6; }
+.tag.env-lava { background: #6b1a06; color: #ffb27a; }
+.tag.env-fire { background: #6b2e06; color: #ffd08a; }
+.tag.env-ice { background: #1f4a66; color: #e0f4ff; }
+.tag.env-webs { background: #404040; color: #f0f0f0; }
+.tag.env-crystals { background: #3b2a5c; color: #dccbff; }
 
 .modal {
   position: fixed;
