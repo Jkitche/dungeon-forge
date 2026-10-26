@@ -544,3 +544,107 @@ button:focus-visible {
   border-color: var(--danger);
   color: #f5b8aa;
 }
+
+/* Print dialog */
+.print-dialog {
+  width: min(860px, calc(100vw - 32px));
+}
+.print-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 18px;
+}
+.print-sheets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.export-options .print-sheets input[type="number"] {
+  width: 56px;
+}
+.print-preview canvas {
+  width: 100%;
+  background: #0f1013;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.print-preview .hint {
+  margin: 8px 0 0;
+}
+
+/* The printed pages: hidden on screen, the only thing on paper. */
+#print-root {
+  display: none;
+}
+@media print {
+  /* :root, not just html: the app's dark background is set on :root. */
+  :root,
+  body {
+    height: auto;
+    overflow: visible;
+    display: block;
+    background: #fff;
+  }
+  body > *:not(#print-root) {
+    display: none !important;
+  }
+  #print-root {
+    display: block;
+    color: #000;
+  }
+  .print-page {
+    position: relative;
+    break-after: page;
+    overflow: hidden;
+  }
+  .print-page:last-child {
+    break-after: auto;
+  }
+  .print-page img {
+    display: block;
+  }
+  /* Where the next sheet starts: trim here and tape under the neighbour. */
+  .print-trim {
+    position: absolute;
+    border: 0 dashed rgba(0, 0, 0, 0.6);
+  }
+  .print-trim.x {
+    top: 0;
+    bottom: 0;
+    border-left-width: 1px;
+  }
+  .print-trim.y {
+    left: 0;
+    right: 0;
+    border-top-width: 1px;
+  }
+  .print-key {
+    break-before: page;
+    font:
+      10pt Georgia,
+      serif;
+  }
+  .print-key h2 {
+    font-size: 16pt;
+    margin: 0 0 0.15in;
+  }
+  .print-key .room {
+    break-inside: avoid;
+    border: 1px solid #999;
+    border-radius: 4px;
+    padding: 0.08in 0.12in;
+    margin-bottom: 0.1in;
+    background: none;
+    color: #000;
+  }
+  /* The key's on-screen colours are made for a dark background. */
+  .print-key,
+  .print-key * {
+    color: #000 !important;
+  }
+  .print-key .tag {
+    border: 1px solid #666;
+    background: none !important;
+    color: #000 !important;
+  }
+}

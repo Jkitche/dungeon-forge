@@ -110,7 +110,8 @@ export type ThemeKey =
   | "starship"
   | "brass"
   | "gothic"
-  | "wasteland";
+  | "wasteland"
+  | "ink";
 
 const SERIF = 'Georgia, "Times New Roman", serif';
 
@@ -142,6 +143,40 @@ export const THEMES: Record<ThemeKey, Theme> = {
     },
     rock: "hatch",
     rockLine: "#3d3125",
+    floorStyle: "plain",
+    doorStyle: "outline",
+    stairStyle: "steps",
+    pillarStyle: "round",
+  },
+  // For printing: the Parchment look on white paper with grey hatching, so a sheet of
+  // rock doesn't drain the ink. Not one of the on-screen Looks.
+  ink: {
+    label: "Ink Saver",
+    bg: "#ffffff",
+    floor: "#ffffff",
+    grid: "rgba(0, 0, 0, 0.25)",
+    wall: "#111111",
+    wallWidth: 0.12,
+    door: "#ffffff",
+    doorStroke: "#111111",
+    stair: "#111111",
+    pillarFill: "#111111",
+    pillarStroke: "#111111",
+    text: "#111111",
+    halo: "#ffffff",
+    font: SERIF,
+    windowGlass: "#ffffff",
+    props: {
+      wood: "#ffffff",
+      metal: "#f2f2f2",
+      cloth: "#f2f2f2",
+      stone: "#ffffff",
+      line: "#111111",
+      glow: "#d9a441",
+      paper: "#ffffff",
+    },
+    rock: "hatch",
+    rockLine: "#9a9a9a",
     floorStyle: "plain",
     doorStyle: "outline",
     stairStyle: "steps",
@@ -450,6 +485,11 @@ export interface RenderOptions {
   lighting?: boolean;
   /** Wash frozen rooms blue and scorching ones red, bleeding out through doorways. Default off. */
   effects?: boolean;
+  /**
+   * Render only this part of the map, in grid units (e.g. one printed page). The canvas
+   * covers just the region; the rest draws exactly as it would on the whole map.
+   */
+  region?: { x: number; y: number; w: number; h: number };
 }
 
 type Ctx = CanvasRenderingContext2D;
@@ -468,7 +508,7 @@ interface Paint {
   shade: number;
 }
 
-/** Draw the dungeon into `canvas`, resizing it to fit. */
+/** Draw the dungeon (or `opts.region` of it) into `canvas`, resizing it to fit. */
 export function renderDungeon(
   canvas: HTMLCanvasElement,
   d: Dungeon,
@@ -476,11 +516,15 @@ export function renderDungeon(
 ): HTMLCanvasElement {
   const ppg = opts.ppg ?? 48;
   const theme = THEMES[isThemeKey(opts.theme) ? opts.theme : "parchment"];
-  canvas.width = d.width * ppg;
-  canvas.height = d.height * ppg;
+  const region = opts.region ?? { x: 0, y: 0, w: d.width, h: d.height };
+  canvas.width = Math.round(region.w * ppg);
+  canvas.height = Math.round(region.h * ppg);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D context unavailable");
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // Everything draws in whole-map coordinates; the offset brings the region into view.
+  ctx.setTransform(1, 0, 0, 1, -region.x * ppg, -region.y * ppg);
+  const mapW = d.width * ppg;
+  const mapH = d.height * ppg;
   const p: Paint = {
     ctx,
     d,
@@ -497,7 +541,7 @@ export function renderDungeon(
   };
 
   ctx.fillStyle = theme.bg;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, mapW, mapH);
   ROCK_PAINTERS[theme.rock](p);
   runDecor("rock");
 
@@ -530,8 +574,8 @@ export function renderDungeon(
       ctx,
       lights,
       ppg,
-      canvas.width,
-      canvas.height,
+      mapW,
+      mapH,
       theme.shadow ? 0.42 : 0.14,
       lightOccluders(d),
     );

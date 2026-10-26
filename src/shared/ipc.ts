@@ -38,6 +38,7 @@ export type MenuAction =
   | "save"
   | "copy-code"
   | "paste-code"
+  | "print"
   | "export"
   | "toggle-gm"
   | "toggle-edit"

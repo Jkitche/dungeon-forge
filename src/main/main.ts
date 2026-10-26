@@ -336,6 +336,7 @@ function buildMenu(): void {
         },
         { type: "separator" },
         { label: "Export…", accelerator: "CmdOrCtrl+E", click: send("export") },
+        { label: "Print…", accelerator: "CmdOrCtrl+P", click: send("print") },
         { type: "separator" },
         isMac ? { role: "close" } : { role: "quit" },
       ],

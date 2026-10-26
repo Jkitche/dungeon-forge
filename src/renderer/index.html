@@ -44,6 +44,9 @@
       <button id="btn-fit" title="Fit to window (Ctrl+0)">Fit</button>
       <button id="btn-open" title="Open a saved map (Ctrl+O)">Open</button>
       <button id="btn-save" title="Save this map (Ctrl+S)">Save</button>
+      <button id="btn-print" title="Print the map on paper (Ctrl+P)">
+        Print…
+      </button>
       <button id="btn-export" class="accent" title="Export for a VTT (Ctrl+E)">
         Export…
       </button>
@@ -137,6 +140,108 @@
         </div>
       </div>
     </div>
+
+    <div id="print-modal" class="modal" hidden>
+      <div
+        class="dialog print-dialog"
+        role="dialog"
+        aria-labelledby="print-title"
+      >
+        <h2 id="print-title">Print map</h2>
+        <div class="print-layout">
+          <div class="export-options">
+            <label
+              >Size
+              <select id="print-size">
+                <option value="one">On one page</option>
+                <option value="fit">Spread over sheets…</option>
+                <option value="tabletop">
+                  Tabletop: 1 inch per square (for minis)
+                </option>
+              </select>
+            </label>
+            <label id="print-sheets"
+              >Sheets
+              <span class="print-sheets">
+                <input id="print-across" type="number" min="1" max="10" />
+                across ×
+                <input id="print-down" type="number" min="1" max="10" />
+                down
+              </span>
+            </label>
+            <label
+              >Paper
+              <select id="print-paper"></select
+            ></label>
+            <label
+              >Orientation
+              <select id="print-orientation">
+                <option value="auto">Best fit</option>
+                <option value="portrait">Portrait</option>
+                <option value="landscape">Landscape</option>
+              </select>
+            </label>
+            <label
+              >Margins
+              <select id="print-margin">
+                <option value="0.25">0.25 in</option>
+                <option value="0.5">0.5 in</option>
+                <option value="0">None (borderless printers)</option>
+              </select>
+            </label>
+            <label
+              >Overlap between sheets
+              <select id="print-overlap">
+                <option value="0">None</option>
+                <option value="0.25">0.25 in, for trimming and taping</option>
+                <option value="0.5">0.5 in, for trimming and taping</option>
+              </select>
+            </label>
+            <label
+              >Shows
+              <select id="print-view">
+                <option value="player">Player view</option>
+                <option value="gm">GM view (numbers, secret doors)</option>
+              </select>
+            </label>
+            <label
+              >Look
+              <select id="print-look">
+                <option value="shown">As on screen</option>
+                <option value="ink">Ink saver (white paper)</option>
+              </select>
+            </label>
+            <label class="check"
+              ><input id="print-grid" type="checkbox" checked /> Draw
+              grid</label
+            >
+            <label class="check"
+              ><input id="print-labels" type="checkbox" checked /> Label sheets
+              for assembly (A1, B2…)</label
+            >
+            <label class="check" id="print-key-row"
+              ><input id="print-key" type="checkbox" /> Add the room key after
+              the map</label
+            >
+          </div>
+          <div class="print-preview">
+            <canvas id="print-preview"></canvas>
+            <p class="hint" id="print-summary"></p>
+          </div>
+        </div>
+        <p class="hint">
+          In the print dialog, keep the scale at 100% (actual size) so the map
+          prints at the size shown here.
+        </p>
+        <div class="actions">
+          <button id="print-cancel">Cancel</button>
+          <button id="print-go" class="accent">Print…</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filled with the pages just before printing; only visible on paper. -->
+    <div id="print-root"></div>
 
     <div id="toast" class="toast" hidden></div>
 

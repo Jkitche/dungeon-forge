@@ -40,6 +40,7 @@ import type { PropKind } from "./clutter.ts";
 import { GENRES, GENRE_KEYS, getGenre, isGenreKey } from "./genres.ts";
 import { loadPhotoTextures } from "./photo.ts";
 import { decodeMapCode, encodeMapCode, rebuildsFromSeed } from "./mapcode.ts";
+import { setupPrint } from "./print-ui.ts";
 import type { MapProject } from "./mapcode.ts";
 import type { DungeonForgeApi, MenuAction } from "../shared/ipc.ts";
 
@@ -1355,6 +1356,15 @@ async function pasteMapCode(): Promise<void> {
   toast(`Pasted map "${dungeon().seed}"`);
 }
 
+const printer = setupPrint({
+  dungeon,
+  renderStyle,
+  gmView: () => state.gmView,
+  roomKey: () => $("key"),
+  toast,
+  busy,
+});
+
 const actions: Record<MenuAction, () => void> = {
   new: newDungeon,
   blank: blankMap,
@@ -1364,6 +1374,7 @@ const actions: Record<MenuAction, () => void> = {
   "copy-code": guard(copyMapCode),
   "paste-code": guard(pasteMapCode),
   export: openExport,
+  print: () => printer.open(),
   "toggle-gm": () => setGmView(!state.gmView),
   "toggle-edit": () => setEditing(!editor.active),
   fit: fitView,
@@ -1375,6 +1386,7 @@ $("btn-fit").addEventListener("click", actions.fit);
 $("btn-open").addEventListener("click", actions.open);
 $("btn-save").addEventListener("click", actions.save);
 $("btn-export").addEventListener("click", actions.export);
+$("btn-print").addEventListener("click", actions.print);
 $("btn-edit").addEventListener("click", actions["toggle-edit"]);
 $("btn-edit-done").addEventListener("click", () => setEditing(false));
 $("btn-undo").addEventListener("click", () => editor.undo());
@@ -1413,6 +1425,7 @@ document.addEventListener("keydown", (e) => {
     if (editor.dragging) editor.cancelDrag();
     $("export-modal").hidden = true;
     $("info-modal").hidden = true;
+    $("print-modal").hidden = true;
     return;
   }
   const t = e.target;
@@ -1420,7 +1433,13 @@ document.addEventListener("keydown", (e) => {
     t instanceof HTMLInputElement ||
     t instanceof HTMLSelectElement ||
     t instanceof HTMLTextAreaElement;
-  if (typing || !editor.active || !$("export-modal").hidden) return;
+  if (
+    typing ||
+    !editor.active ||
+    !$("export-modal").hidden ||
+    !$("print-modal").hidden
+  )
+    return;
   const mod = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
   if (mod && key === "z") {
