@@ -4,11 +4,7 @@
 import type { ThemeKey } from "./renderer.ts";
 
 export type GenreKey =
-  | "fantasy"
-  | "scifi"
-  | "steampunk"
-  | "horror"
-  | "wasteland";
+  "fantasy" | "scifi" | "steampunk" | "horror" | "wasteland";
 
 /** Layout sliders a genre nudges when it is picked in the UI. */
 export interface LayoutPreset {

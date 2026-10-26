@@ -1,96 +1,138 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'">
-  <title>Dungeon Forge</title>
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <header class="toolbar">
-    <div class="brand">Dungeon Forge</div>
-    <label class="seed">
-      <span>Seed</span>
-      <input id="seed" type="text" spellcheck="false">
-    </label>
-    <button id="btn-new" class="primary" title="New random dungeon (Ctrl+N)">New dungeon</button>
-    <button id="btn-regen" title="Rebuild from the current seed (Ctrl+R)">Rebuild</button>
-    <div class="spacer"></div>
-    <div class="segmented" role="group" aria-label="View">
-      <button id="view-gm" class="active" title="Room numbers and secret doors (Ctrl+G)">GM</button>
-      <button id="view-player" title="What your players should see">Player</button>
-    </div>
-    <button id="btn-edit" title="Draw your own rooms, corridors and doors (Ctrl+Shift+E)">Edit map</button>
-    <button id="btn-fit" title="Fit to window (Ctrl+0)">Fit</button>
-    <button id="btn-open" title="Open a saved map (Ctrl+O)">Open</button>
-    <button id="btn-save" title="Save this map (Ctrl+S)">Save</button>
-    <button id="btn-export" class="accent" title="Export for a VTT (Ctrl+E)">Export…</button>
-  </header>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
+    />
+    <title>Dungeon Forge</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <div class="brand">Dungeon Forge</div>
+      <label class="seed">
+        <span>Seed</span>
+        <input id="seed" type="text" spellcheck="false" />
+      </label>
+      <button id="btn-new" class="primary" title="New random dungeon (Ctrl+N)">
+        New dungeon
+      </button>
+      <button id="btn-regen" title="Rebuild from the current seed (Ctrl+R)">
+        Rebuild
+      </button>
+      <div class="spacer"></div>
+      <div class="segmented" role="group" aria-label="View">
+        <button
+          id="view-gm"
+          class="active"
+          title="Room numbers and secret doors (Ctrl+G)"
+        >
+          GM
+        </button>
+        <button id="view-player" title="What your players should see">
+          Player
+        </button>
+      </div>
+      <button
+        id="btn-edit"
+        title="Draw your own rooms, corridors and doors (Ctrl+Shift+E)"
+      >
+        Edit map
+      </button>
+      <button id="btn-fit" title="Fit to window (Ctrl+0)">Fit</button>
+      <button id="btn-open" title="Open a saved map (Ctrl+O)">Open</button>
+      <button id="btn-save" title="Save this map (Ctrl+S)">Save</button>
+      <button id="btn-export" class="accent" title="Export for a VTT (Ctrl+E)">
+        Export…
+      </button>
+    </header>
 
-  <main class="layout">
-    <aside class="sidebar" id="controls"></aside>
+    <main class="layout">
+      <aside class="sidebar" id="controls"></aside>
 
-    <section class="stage">
-      <div id="viewport" class="viewport">
-        <canvas id="view"></canvas>
-        <div id="editbar" class="editbar" hidden>
-          <label class="edit-field">Tool <select id="edit-tool"></select></label>
-          <label class="edit-field" id="edit-prop-field" hidden>Prop <select id="edit-prop"></select></label>
-          <label class="edit-field" id="edit-radius-field" hidden>Radius <select id="edit-radius"></select></label>
-          <div class="edit-actions">
-            <button id="btn-undo" title="Undo (Ctrl+Z)">Undo</button>
-            <button id="btn-redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
-            <button id="btn-clear" title="Turn the whole map back into rock">Clear</button>
-            <button id="btn-edit-done" class="accent">Done</button>
+      <section class="stage">
+        <div id="viewport" class="viewport">
+          <canvas id="view"></canvas>
+          <div id="editbar" class="editbar" hidden>
+            <label class="edit-field"
+              >Tool
+              <select id="edit-tool"></select
+            ></label>
+            <label class="edit-field" id="edit-prop-field" hidden
+              >Prop
+              <select id="edit-prop"></select
+            ></label>
+            <label class="edit-field" id="edit-radius-field" hidden
+              >Radius
+              <select id="edit-radius"></select
+            ></label>
+            <div class="edit-actions">
+              <button id="btn-undo" title="Undo (Ctrl+Z)">Undo</button>
+              <button id="btn-redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
+              <button id="btn-clear" title="Turn the whole map back into rock">
+                Clear
+              </button>
+              <button id="btn-edit-done" class="accent">Done</button>
+            </div>
+            <div id="edit-hint" class="edit-hint"></div>
           </div>
-          <div id="edit-hint" class="edit-hint"></div>
+        </div>
+        <footer class="statusbar" id="status"></footer>
+      </section>
+
+      <aside class="keypanel">
+        <h2>Room key</h2>
+        <div id="key" class="key"></div>
+      </aside>
+    </main>
+
+    <div id="export-modal" class="modal" hidden>
+      <div class="dialog" role="dialog" aria-labelledby="export-title">
+        <h2 id="export-title">Export map</h2>
+        <div class="formats" id="export-formats"></div>
+        <p class="hint" id="export-desc"></p>
+        <div class="export-options" id="export-options">
+          <label
+            >Pixels per square
+            <input id="export-ppg" type="number" min="20" max="400" step="1"
+          /></label>
+          <label class="check"
+            ><input id="export-grid" type="checkbox" /> Draw grid on
+            image</label
+          >
+          <label
+            >Image shows
+            <select id="export-view">
+              <option value="player">
+                Player view (no numbers, secret doors hidden)
+              </option>
+              <option value="gm">GM view (numbers, secret doors marked)</option>
+            </select>
+          </label>
+          <p class="hint" id="export-size"></p>
+        </div>
+        <div class="actions">
+          <button id="export-cancel">Cancel</button>
+          <button id="export-go" class="accent">Export</button>
         </div>
       </div>
-      <footer class="statusbar" id="status"></footer>
-    </section>
+    </div>
 
-    <aside class="keypanel">
-      <h2>Room key</h2>
-      <div id="key" class="key"></div>
-    </aside>
-  </main>
-
-  <div id="export-modal" class="modal" hidden>
-    <div class="dialog" role="dialog" aria-labelledby="export-title">
-      <h2 id="export-title">Export map</h2>
-      <div class="formats" id="export-formats"></div>
-      <p class="hint" id="export-desc"></p>
-      <div class="export-options" id="export-options">
-        <label>Pixels per square <input id="export-ppg" type="number" min="20" max="400" step="1"></label>
-        <label class="check"><input id="export-grid" type="checkbox"> Draw grid on image</label>
-        <label>Image shows
-          <select id="export-view">
-            <option value="player">Player view (no numbers, secret doors hidden)</option>
-            <option value="gm">GM view (numbers, secret doors marked)</option>
-          </select>
-        </label>
-        <p class="hint" id="export-size"></p>
-      </div>
-      <div class="actions">
-        <button id="export-cancel">Cancel</button>
-        <button id="export-go" class="accent">Export</button>
+    <div id="info-modal" class="modal" hidden>
+      <div class="dialog">
+        <h2 id="info-title"></h2>
+        <div id="info-body" class="info-body"></div>
+        <div class="actions">
+          <button id="info-reveal" hidden>Show in folder</button>
+          <button id="info-close" class="accent">OK</button>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div id="info-modal" class="modal" hidden>
-    <div class="dialog">
-      <h2 id="info-title"></h2>
-      <div id="info-body" class="info-body"></div>
-      <div class="actions">
-        <button id="info-reveal" hidden>Show in folder</button>
-        <button id="info-close" class="accent">OK</button>
-      </div>
-    </div>
-  </div>
+    <div id="toast" class="toast" hidden></div>
 
-  <div id="toast" class="toast" hidden></div>
-
-  <script type="module" src="app.js"></script>
-</body>
+    <script type="module" src="app.js"></script>
+  </body>
 </html>

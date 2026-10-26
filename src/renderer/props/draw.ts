@@ -1,10 +1,14 @@
 // Drawing helpers shared by the prop renderers (and, for blob, the map renderer).
 
-import type { RNG } from '../rng.ts';
-import type { PropBox, PropPaintContext } from './types.ts';
+import type { RNG } from "../rng.ts";
+import type { PropBox, PropPaintContext } from "./types.ts";
 
 /** Fills and outlines the path that `draw` builds, in the palette's line colour. */
-export function outlined(c: PropPaintContext, fill: string, draw: () => void): void {
+export function outlined(
+  c: PropPaintContext,
+  fill: string,
+  draw: () => void,
+): void {
   const { ctx, ppg, palette } = c;
   ctx.fillStyle = fill;
   ctx.strokeStyle = palette.line;
@@ -23,18 +27,34 @@ export function outlined(c: PropPaintContext, fill: string, draw: () => void): v
 }
 
 /** Light top-left, dark bottom-right, over whatever is clipped: a raised, lit surface. */
-export function bevel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, amount: number): void {
+export function bevel(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  amount: number,
+): void {
   const g = ctx.createLinearGradient(x, y, x + w, y + h);
   g.addColorStop(0, `rgba(255, 255, 255, ${(0.36 * amount).toFixed(3)})`);
-  g.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
+  g.addColorStop(0.5, "rgba(255, 255, 255, 0)");
   g.addColorStop(1, `rgba(0, 0, 0, ${(0.4 * amount).toFixed(3)})`);
   ctx.fillStyle = g;
   ctx.fillRect(x, y, w, h);
 }
 
 /** Inset a box by fractions of a square on each axis. */
-export const inset = (b: PropBox, ppg: number, ix: number, iy = ix): PropBox => ({
-  ...b, x: b.x + ppg * ix, y: b.y + ppg * iy, w: b.w - ppg * ix * 2, h: b.h - ppg * iy * 2,
+export const inset = (
+  b: PropBox,
+  ppg: number,
+  ix: number,
+  iy = ix,
+): PropBox => ({
+  ...b,
+  x: b.x + ppg * ix,
+  y: b.y + ppg * iy,
+  w: b.w - ppg * ix * 2,
+  h: b.h - ppg * iy * 2,
 });
 
 /** '#rrggbb' to 'rgba(r, g, b, a)'. */
@@ -43,7 +63,13 @@ export function withAlpha(hex: string, a: number): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
-export function glowCircle(ctx: CanvasRenderingContext2D, color: string, x: number, y: number, r: number): void {
+export function glowCircle(
+  ctx: CanvasRenderingContext2D,
+  color: string,
+  x: number,
+  y: number,
+  r: number,
+): void {
   const g = ctx.createRadialGradient(x, y, 0, x, y, r);
   // Fade to the same colour, fully transparent; fading to transparent black looks muddy.
   g.addColorStop(0, withAlpha(color, 0.55));

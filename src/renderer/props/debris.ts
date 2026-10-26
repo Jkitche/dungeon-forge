@@ -1,10 +1,10 @@
 // Rubble and bones.
 
-import { blob, outlined } from './draw.ts';
-import type { PropBox, PropPaintContext, PropRenderer } from './types.ts';
+import { blob, outlined } from "./draw.ts";
+import type { PropBox, PropPaintContext, PropRenderer } from "./types.ts";
 
 export class RubbleRenderer implements PropRenderer {
-  readonly kind = 'rubble';
+  readonly kind = "rubble";
   readonly height = 0.3;
   readonly round = true;
 
@@ -14,14 +14,20 @@ export class RubbleRenderer implements PropRenderer {
     ctx.lineWidth = Math.max(1, ppg * 0.025);
     for (let i = 0; i < 6; i++) {
       ctx.fillStyle = rng.pick([palette.stone, palette.line, palette.stone]);
-      blob(c, (b.x + b.w * (0.2 + rng.float() * 0.6)) / ppg, (b.y + b.h * (0.2 + rng.float() * 0.6)) / ppg, 0.06 + rng.float() * 0.1, 6);
+      blob(
+        c,
+        (b.x + b.w * (0.2 + rng.float() * 0.6)) / ppg,
+        (b.y + b.h * (0.2 + rng.float() * 0.6)) / ppg,
+        0.06 + rng.float() * 0.1,
+        6,
+      );
       ctx.stroke(); // outlined so pale stones still read on light themes
     }
   }
 }
 
 export class BonesRenderer implements PropRenderer {
-  readonly kind = 'bones';
+  readonly kind = "bones";
   readonly height = 0;
   readonly round = true;
 
@@ -29,7 +35,7 @@ export class BonesRenderer implements PropRenderer {
     const { ctx, ppg, palette, rng } = c;
     const cx = b.x + b.w / 2;
     const cy = b.y + b.h / 2;
-    ctx.lineCap = 'round';
+    ctx.lineCap = "round";
     ctx.beginPath();
     for (let i = 0; i < 3; i++) {
       const a = rng.float() * Math.PI;
@@ -46,6 +52,8 @@ export class BonesRenderer implements PropRenderer {
     ctx.strokeStyle = palette.paper;
     ctx.lineWidth = Math.max(1, ppg * 0.05);
     ctx.stroke();
-    outlined(c, palette.paper, () => ctx.arc(cx + ppg * 0.12, cy - ppg * 0.1, ppg * 0.11, 0, Math.PI * 2));
+    outlined(c, palette.paper, () =>
+      ctx.arc(cx + ppg * 0.12, cy - ppg * 0.1, ppg * 0.11, 0, Math.PI * 2),
+    );
   }
 }

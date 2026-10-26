@@ -39,7 +39,7 @@ export class RNG {
     return this.next() < p;
   }
   pick<T>(arr: readonly T[]): T {
-    if (arr.length === 0) throw new Error('RNG.pick from an empty array');
+    if (arr.length === 0) throw new Error("RNG.pick from an empty array");
     return arr[Math.floor(this.next() * arr.length)] as T;
   }
   shuffle<T>(arr: T[]): T[] {
@@ -51,11 +51,46 @@ export class RNG {
   }
 }
 
-const SEED_ADJ = ['crimson', 'sunken', 'forgotten', 'howling', 'gilded', 'ashen', 'drowned', 'hollow', 'iron', 'shadow', 'bleak', 'ember', 'frozen', 'silent', 'cursed', 'verdant'];
-const SEED_NOUN = ['crypt', 'vault', 'warren', 'keep', 'tomb', 'lair', 'depths', 'halls', 'catacomb', 'sanctum', 'mine', 'grotto', 'citadel', 'barrow', 'pit', 'labyrinth'];
+const SEED_ADJ = [
+  "crimson",
+  "sunken",
+  "forgotten",
+  "howling",
+  "gilded",
+  "ashen",
+  "drowned",
+  "hollow",
+  "iron",
+  "shadow",
+  "bleak",
+  "ember",
+  "frozen",
+  "silent",
+  "cursed",
+  "verdant",
+];
+const SEED_NOUN = [
+  "crypt",
+  "vault",
+  "warren",
+  "keep",
+  "tomb",
+  "lair",
+  "depths",
+  "halls",
+  "catacomb",
+  "sanctum",
+  "mine",
+  "grotto",
+  "citadel",
+  "barrow",
+  "pit",
+  "labyrinth",
+];
 
 /** A memorable, non-deterministic seed like "sunken-crypt-4821". */
 export function randomSeed(): string {
-  const pick = (a: readonly string[]): string => a[Math.floor(Math.random() * a.length)] ?? '';
+  const pick = (a: readonly string[]): string =>
+    a[Math.floor(Math.random() * a.length)] ?? "";
   return `${pick(SEED_ADJ)}-${pick(SEED_NOUN)}-${Math.floor(1000 + Math.random() * 9000)}`;
 }

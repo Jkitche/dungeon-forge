@@ -1,10 +1,10 @@
 // Statues, braziers and coffins.
 
-import { glowCircle, inset, outlined } from './draw.ts';
-import type { PropBox, PropPaintContext, PropRenderer } from './types.ts';
+import { glowCircle, inset, outlined } from "./draw.ts";
+import type { PropBox, PropPaintContext, PropRenderer } from "./types.ts";
 
 export class StatueRenderer implements PropRenderer {
-  readonly kind = 'statue';
+  readonly kind = "statue";
   readonly height = 1.8;
   readonly round = false;
 
@@ -12,7 +12,9 @@ export class StatueRenderer implements PropRenderer {
     const { ctx, ppg, palette } = c;
     const base = inset(b, ppg, 0.12);
     outlined(c, palette.stone, () => ctx.rect(base.x, base.y, base.w, base.h));
-    outlined(c, palette.paper, () => ctx.arc(b.x + b.w / 2, b.y + b.h / 2, ppg * 0.2, 0, Math.PI * 2));
+    outlined(c, palette.paper, () =>
+      ctx.arc(b.x + b.w / 2, b.y + b.h / 2, ppg * 0.2, 0, Math.PI * 2),
+    );
     ctx.beginPath();
     ctx.arc(b.x + b.w / 2, b.y + b.h / 2, ppg * 0.08, 0, Math.PI * 2);
     ctx.stroke();
@@ -20,7 +22,7 @@ export class StatueRenderer implements PropRenderer {
 }
 
 export class BrazierRenderer implements PropRenderer {
-  readonly kind = 'brazier';
+  readonly kind = "brazier";
   readonly height = 0.9;
   readonly round = true;
 
@@ -29,7 +31,9 @@ export class BrazierRenderer implements PropRenderer {
     const cx = b.x + b.w / 2;
     const cy = b.y + b.h / 2;
     glowCircle(ctx, palette.glow, cx, cy, ppg * 0.9);
-    outlined(c, palette.metal, () => ctx.arc(cx, cy, ppg * 0.26, 0, Math.PI * 2));
+    outlined(c, palette.metal, () =>
+      ctx.arc(cx, cy, ppg * 0.26, 0, Math.PI * 2),
+    );
     ctx.fillStyle = palette.glow;
     ctx.beginPath();
     ctx.arc(cx, cy, ppg * 0.14, 0, Math.PI * 2);
@@ -38,7 +42,7 @@ export class BrazierRenderer implements PropRenderer {
 }
 
 export class CoffinRenderer implements PropRenderer {
-  readonly kind = 'coffin';
+  readonly kind = "coffin";
   readonly height = 0.7;
   readonly round = false;
 
@@ -50,7 +54,14 @@ export class CoffinRenderer implements PropRenderer {
     const wid = (v ? box.w : box.h) * 0.62;
     const ox = box.x + box.w / 2;
     const oy = box.y + box.h / 2;
-    const pts: [number, number][] = [[-0.46, -0.3], [-0.22, -0.5], [0.46, -0.34], [0.46, 0.34], [-0.22, 0.5], [-0.46, 0.3]];
+    const pts: [number, number][] = [
+      [-0.46, -0.3],
+      [-0.22, -0.5],
+      [0.46, -0.34],
+      [0.46, 0.34],
+      [-0.22, 0.5],
+      [-0.46, 0.3],
+    ];
     outlined(c, palette.wood, () => {
       pts.forEach(([a, c], i) => {
         const px = v ? ox + c * wid : ox + a * len;

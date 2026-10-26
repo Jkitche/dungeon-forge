@@ -1,17 +1,23 @@
 // Cold and heat on the map: a frozen room is washed blue and a scorching one red, and the
 // colour bleeds out through its doorways, fading along the corridor beyond.
 
-import type { Dungeon } from './generator.ts';
-import type { Environment } from './environment.ts';
-import { SPREAD, environmentField, environmentOpenings } from './environment.ts';
-import { withAlpha } from './props/draw.ts';
+import type { Dungeon } from "./generator.ts";
+import type { Environment } from "./environment.ts";
+import {
+  SPREAD,
+  environmentField,
+  environmentOpenings,
+} from "./environment.ts";
+import { withAlpha } from "./props/draw.ts";
 
 type Ctx = CanvasRenderingContext2D;
 
 /** The wash each environment shows in, and how strong it is at full intensity. */
-export const TINTS: Partial<Record<Environment, { colour: string; alpha: number }>> = {
-  frost: { colour: '#3d9bff', alpha: 0.42 },
-  heat: { colour: '#ff3b1f', alpha: 0.38 },
+export const TINTS: Partial<
+  Record<Environment, { colour: string; alpha: number }>
+> = {
+  frost: { colour: "#3d9bff", alpha: 0.42 },
+  heat: { colour: "#ff3b1f", alpha: 0.38 },
 };
 
 /**

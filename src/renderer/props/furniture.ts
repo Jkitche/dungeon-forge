@@ -1,17 +1,19 @@
 // Tables, beds, shelves and rugs.
 
-import { inset, outlined } from './draw.ts';
-import type { PropBox, PropPaintContext, PropRenderer } from './types.ts';
+import { inset, outlined } from "./draw.ts";
+import type { PropBox, PropPaintContext, PropRenderer } from "./types.ts";
 
 export class TableRenderer implements PropRenderer {
-  readonly kind = 'table';
+  readonly kind = "table";
   readonly height = 0.8;
   readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette } = c;
     const b = inset(box, ppg, 0.14);
-    outlined(c, palette.wood, () => ctx.roundRect(b.x, b.y, b.w, b.h, ppg * 0.06));
+    outlined(c, palette.wood, () =>
+      ctx.roundRect(b.x, b.y, b.w, b.h, ppg * 0.06),
+    );
     // Something on the table: a candle, a plate.
     ctx.fillStyle = palette.paper;
     ctx.beginPath();
@@ -26,14 +28,16 @@ export class TableRenderer implements PropRenderer {
 }
 
 export class BedRenderer implements PropRenderer {
-  readonly kind = 'bed';
+  readonly kind = "bed";
   readonly height = 0.5;
   readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette } = c;
     const b = inset(box, ppg, 0.1);
-    outlined(c, palette.cloth, () => ctx.roundRect(b.x, b.y, b.w, b.h, ppg * 0.06));
+    outlined(c, palette.cloth, () =>
+      ctx.roundRect(b.x, b.y, b.w, b.h, ppg * 0.06),
+    );
     const pw = box.vertical ? b.w * 0.8 : ppg * 0.32;
     const ph = box.vertical ? ppg * 0.32 : b.h * 0.8;
     const px = box.vertical ? b.x + (b.w - pw) / 2 : b.x + ppg * 0.08;
@@ -43,19 +47,29 @@ export class BedRenderer implements PropRenderer {
 }
 
 export class ShelfRenderer implements PropRenderer {
-  readonly kind = 'shelf';
+  readonly kind = "shelf";
   readonly height = 1.6;
   readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette, rng } = c;
-    const b = inset(box, ppg, box.vertical ? 0.3 : 0.08, box.vertical ? 0.08 : 0.3);
+    const b = inset(
+      box,
+      ppg,
+      box.vertical ? 0.3 : 0.08,
+      box.vertical ? 0.08 : 0.3,
+    );
     outlined(c, palette.wood, () => ctx.rect(b.x, b.y, b.w, b.h));
     // Books or boxes along the shelf.
     const along = box.vertical ? b.h : b.w;
     const n = 6;
     for (let i = 0; i < n; i++) {
-      ctx.fillStyle = rng.pick([palette.cloth, palette.metal, palette.paper, palette.stone]);
+      ctx.fillStyle = rng.pick([
+        palette.cloth,
+        palette.metal,
+        palette.paper,
+        palette.stone,
+      ]);
       const t = (i + 0.15) * (along / n);
       const s = (along / n) * 0.7;
       if (box.vertical) ctx.fillRect(b.x + b.w * 0.2, b.y + t, b.w * 0.6, s);
@@ -65,7 +79,7 @@ export class ShelfRenderer implements PropRenderer {
 }
 
 export class RugRenderer implements PropRenderer {
-  readonly kind = 'rug';
+  readonly kind = "rug";
   readonly height = 0;
   readonly round = false;
 

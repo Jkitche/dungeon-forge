@@ -4,27 +4,35 @@
 // boundary between open and solid cells (see walls.ts). Doors live on the
 // edge between a room cell and the corridor cell that enters it.
 
-import { RNG, randomSeed } from './rng.ts';
-import { createStocker, stockRoom } from './contents.ts';
-import type { RoomContents } from './contents.ts';
-import { getGenre, isGenreKey } from './genres.ts';
-import { placeClutter } from './clutter.ts';
-import { detectEnvironment, isEnvironment } from './environment.ts';
-import type { Environment } from './environment.ts';
-import type { Prop } from './clutter.ts';
-import type { GenreKey } from './genres.ts';
+import { RNG, randomSeed } from "./rng.ts";
+import { createStocker, stockRoom } from "./contents.ts";
+import type { RoomContents } from "./contents.ts";
+import { getGenre, isGenreKey } from "./genres.ts";
+import { placeClutter } from "./clutter.ts";
+import { detectEnvironment, isEnvironment } from "./environment.ts";
+import type { Environment } from "./environment.ts";
+import type { Prop } from "./clutter.ts";
+import type { GenreKey } from "./genres.ts";
 
 // Cell types and directions live in cells.ts so other modules can use them without
 // importing the generator; re-exported here for existing callers.
-export { ROCK, ROOM, CORRIDOR, PILLAR, isFloor, isOpen, DIRS } from './cells.ts';
-export type { CellType } from './cells.ts';
-import { ROCK, ROOM, CORRIDOR, PILLAR, isFloor, DIRS } from './cells.ts';
+export {
+  ROCK,
+  ROOM,
+  CORRIDOR,
+  PILLAR,
+  isFloor,
+  isOpen,
+  DIRS,
+} from "./cells.ts";
+export type { CellType } from "./cells.ts";
+import { ROCK, ROOM, CORRIDOR, PILLAR, isFloor, DIRS } from "./cells.ts";
 
-export type Algorithm = 'rooms' | 'caves';
-export type CorridorStyle = 'straight' | 'winding';
+export type Algorithm = "rooms" | "caves";
+export type CorridorStyle = "straight" | "winding";
 /** 'irregular' rooms come from hand edits; 'area' is a cavern region. */
-export type RoomShape = 'rect' | 'round' | 'octagon' | 'irregular' | 'area';
-export type DoorType = 'normal' | 'locked' | 'secret';
+export type RoomShape = "rect" | "round" | "octagon" | "irregular" | "area";
+export type DoorType = "normal" | "locked" | "secret";
 
 export interface DungeonOptions {
   seed: string;
@@ -93,7 +101,7 @@ export interface Stair {
   y: number;
   /** Index into DIRS pointing at the wall the stairs lean against. */
   dir: number;
-  kind: 'up' | 'down';
+  kind: "up" | "down";
   room: number;
 }
 
@@ -115,7 +123,10 @@ export interface MapLight {
 export const TORCH_OFFSET = 0.3;
 
 /** Where a placed light shines from, in grid units. */
-export function lightOrigin(l: Pick<MapLight, 'x' | 'y' | 'wall'>): { x: number; y: number } {
+export function lightOrigin(l: Pick<MapLight, "x" | "y" | "wall">): {
+  x: number;
+  y: number;
+} {
   const [dx, dy] = l.wall === undefined ? [0, 0] : (DIRS[l.wall] ?? [0, 0]);
   return { x: l.x + 0.5 + dx * TORCH_OFFSET, y: l.y + 0.5 + dy * TORCH_OFFSET };
 }
@@ -141,12 +152,15 @@ export interface Dungeon {
   edited?: boolean;
 }
 
-export type SerializedDungeon = Omit<Dungeon, 'cells' | 'roomIds'> & { cells: string; roomIds: number[] };
+export type SerializedDungeon = Omit<Dungeon, "cells" | "roomIds"> & {
+  cells: string;
+  roomIds: number[];
+};
 
 export const DEFAULT_OPTIONS: DungeonOptions = {
-  seed: '',
-  genre: 'fantasy',
-  algorithm: 'rooms',
+  seed: "",
+  genre: "fantasy",
+  algorithm: "rooms",
   width: 48,
   height: 36,
   roomCount: 12,
@@ -154,7 +168,7 @@ export const DEFAULT_OPTIONS: DungeonOptions = {
   roomMax: 10,
   roundRoomChance: 0.15,
   pillarChance: 0.35,
-  corridorStyle: 'straight',
+  corridorStyle: "straight",
   loopChance: 0.2,
   doorChance: 0.8,
   lockedDoorChance: 0.15,
@@ -165,23 +179,39 @@ export const DEFAULT_OPTIONS: DungeonOptions = {
   caveSteps: 5,
 };
 
-const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
-const num = (v: unknown, fallback: number): number => (Number.isFinite(Number(v)) ? Number(v) : fallback);
+const clamp = (v: number, lo: number, hi: number): number =>
+  Math.min(hi, Math.max(lo, v));
+const num = (v: unknown, fallback: number): number =>
+  Number.isFinite(Number(v)) ? Number(v) : fallback;
 
-const CHANCE_KEYS = ['roundRoomChance', 'pillarChance', 'loopChance', 'doorChance', 'lockedDoorChance', 'secretDoorChance', 'windowChance', 'clutter'] as const;
+const CHANCE_KEYS = [
+  "roundRoomChance",
+  "pillarChance",
+  "loopChance",
+  "doorChance",
+  "lockedDoorChance",
+  "secretDoorChance",
+  "windowChance",
+  "clutter",
+] as const;
 
-export function normalizeOptions(input: Partial<DungeonOptions> = {}): DungeonOptions {
+export function normalizeOptions(
+  input: Partial<DungeonOptions> = {},
+): DungeonOptions {
   const o: DungeonOptions = { ...DEFAULT_OPTIONS, ...input };
-  o.seed = String(o.seed ?? '').trim() || randomSeed();
-  o.genre = isGenreKey(o.genre) ? o.genre : 'fantasy';
-  o.algorithm = o.algorithm === 'caves' ? 'caves' : 'rooms';
-  o.corridorStyle = o.corridorStyle === 'winding' ? 'winding' : 'straight';
+  o.seed = String(o.seed ?? "").trim() || randomSeed();
+  o.genre = isGenreKey(o.genre) ? o.genre : "fantasy";
+  o.algorithm = o.algorithm === "caves" ? "caves" : "rooms";
+  o.corridorStyle = o.corridorStyle === "winding" ? "winding" : "straight";
   o.width = Math.round(clamp(num(o.width, 48), 16, 120));
   o.height = Math.round(clamp(num(o.height, 36), 16, 120));
   o.roomCount = Math.round(clamp(num(o.roomCount, 12), 1, 60));
-  o.roomMax = Math.round(clamp(num(o.roomMax, 10), 3, Math.min(o.width, o.height) - 4));
+  o.roomMax = Math.round(
+    clamp(num(o.roomMax, 10), 3, Math.min(o.width, o.height) - 4),
+  );
   o.roomMin = Math.round(clamp(num(o.roomMin, 4), 3, o.roomMax));
-  for (const k of CHANCE_KEYS) o[k] = clamp(num(o[k], DEFAULT_OPTIONS[k]), 0, 1);
+  for (const k of CHANCE_KEYS)
+    o[k] = clamp(num(o[k], DEFAULT_OPTIONS[k]), 0, 1);
   o.caveFill = clamp(num(o.caveFill, 0.45), 0.3, 0.6);
   o.caveSteps = Math.round(clamp(num(o.caveSteps, 5), 1, 10));
   return o;
@@ -213,20 +243,23 @@ export function generateDungeon(input: Partial<DungeonOptions> = {}): Dungeon {
   for (let i = 0; i < noise.length; i++) noise[i] = rng.float();
   const pathCells = new Set<number>();
 
-  if (o.algorithm === 'caves') buildCaves(d, rng, o, noise, pathCells);
+  if (o.algorithm === "caves") buildCaves(d, rng, o, noise, pathCells);
   else buildRooms(d, rng, o, noise, pathCells);
 
   numberRoomsAndPlaceStairs(d, rng, pathCells);
-  if (o.algorithm === 'rooms') {
+  if (o.algorithm === "rooms") {
     placePillars(d, rng, o, pathCells);
     placeDoors(d, rng, o);
     placeWindows(d, o);
   }
 
   // Contents are rolled after the layout, so a seed keeps its floor plan across genres.
-  const decks = createStocker(rng, getGenre(o.genre), o.algorithm === 'caves');
+  const decks = createStocker(rng, getGenre(o.genre), o.algorithm === "caves");
   for (const room of d.rooms) {
-    room.contents = stockRoom(rng, decks, { isEntrance: room.entrance, isExit: room.exit });
+    room.contents = stockRoom(rng, decks, {
+      isEntrance: room.entrance,
+      isExit: room.exit,
+    });
     room.doorCount = d.doors.filter((door) => door.room === room.id).length;
     room.environment = detectEnvironment(room.contents);
   }
@@ -235,14 +268,43 @@ export function generateDungeon(input: Partial<DungeonOptions> = {}): Dungeon {
   return d;
 }
 
-function newRoom(id: number, x: number, y: number, w: number, h: number, shape: RoomShape, cx: number, cy: number): Room {
-  return { id, x, y, w, h, shape, cx, cy, entrance: false, exit: false, contents: null, doorCount: 0, environment: null };
+function newRoom(
+  id: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  shape: RoomShape,
+  cx: number,
+  cy: number,
+): Room {
+  return {
+    id,
+    x,
+    y,
+    w,
+    h,
+    shape,
+    cx,
+    cy,
+    entrance: false,
+    exit: false,
+    contents: null,
+    doorCount: 0,
+    environment: null,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Rooms & corridors
 
-function buildRooms(d: Dungeon, rng: RNG, o: DungeonOptions, noise: Float32Array, pathCells: Set<number>): void {
+function buildRooms(
+  d: Dungeon,
+  rng: RNG,
+  o: DungeonOptions,
+  noise: Float32Array,
+  pathCells: Set<number>,
+): void {
   const { width: W, height: H } = d;
   const pad = 2;
   const maxAttempts = o.roomCount * 60;
@@ -254,15 +316,28 @@ function buildRooms(d: Dungeon, rng: RNG, o: DungeonOptions, noise: Float32Array
     const x = rng.int(2, W - w - 2);
     const y = rng.int(2, H - h - 2);
     const overlaps = d.rooms.some(
-      (r) => x < r.x + r.w + pad && x + w + pad > r.x && y < r.y + r.h + pad && y + h + pad > r.y,
+      (r) =>
+        x < r.x + r.w + pad &&
+        x + w + pad > r.x &&
+        y < r.y + r.h + pad &&
+        y + h + pad > r.y,
     );
     if (overlaps) continue;
 
-    let shape: RoomShape = 'rect';
-    if (w >= 5 && h >= 5 && rng.chance(o.roundRoomChance)) shape = 'round';
-    else if (w >= 6 && h >= 6 && rng.chance(0.15)) shape = 'octagon';
+    let shape: RoomShape = "rect";
+    if (w >= 5 && h >= 5 && rng.chance(o.roundRoomChance)) shape = "round";
+    else if (w >= 6 && h >= 6 && rng.chance(0.15)) shape = "octagon";
 
-    const room = newRoom(d.rooms.length, x, y, w, h, shape, x + Math.floor(w / 2), y + Math.floor(h / 2));
+    const room = newRoom(
+      d.rooms.length,
+      x,
+      y,
+      w,
+      h,
+      shape,
+      x + Math.floor(w / 2),
+      y + Math.floor(h / 2),
+    );
     carveRoom(d, room);
     d.rooms.push(room);
   }
@@ -272,12 +347,12 @@ function buildRooms(d: Dungeon, rng: RNG, o: DungeonOptions, noise: Float32Array
 
 export function inRoomShape(room: Room, i: number, j: number): boolean {
   const { w, h, shape } = room;
-  if (shape === 'round') {
+  if (shape === "round") {
     const dx = (i + 0.5 - w / 2) / (w / 2);
     const dy = (j + 0.5 - h / 2) / (h / 2);
     return dx * dx + dy * dy <= 1.08;
   }
-  if (shape === 'octagon') {
+  if (shape === "octagon") {
     const k = Math.floor(Math.min(w, h) / 3);
     return Math.min(i, w - 1 - i) + Math.min(j, h - 1 - j) >= k;
   }
@@ -301,7 +376,13 @@ interface Edge {
   dist: number;
 }
 
-function connectRooms(d: Dungeon, rng: RNG, o: DungeonOptions, noise: Float32Array, pathCells: Set<number>): void {
+function connectRooms(
+  d: Dungeon,
+  rng: RNG,
+  o: DungeonOptions,
+  noise: Float32Array,
+  pathCells: Set<number>,
+): void {
   const rooms = d.rooms;
   const n = rooms.length;
   if (n < 2) return;
@@ -318,7 +399,8 @@ function connectRooms(d: Dungeon, rng: RNG, o: DungeonOptions, noise: Float32Arr
 
   // Kruskal's minimum spanning tree guarantees every room is reachable.
   const parent = rooms.map((_, i) => i);
-  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i] as number)));
+  const find = (i: number): number =>
+    parent[i] === i ? i : (parent[i] = find(parent[i] as number));
   const tree: Edge[] = [];
   const extra: Edge[] = [];
   for (const e of edges) {
@@ -334,20 +416,22 @@ function connectRooms(d: Dungeon, rng: RNG, o: DungeonOptions, noise: Float32Arr
   // Extra short connections create loops so the dungeon is not a pure tree.
   const loops = extra.slice(0, n * 2).filter(() => rng.chance(o.loopChance));
 
-  const winding = o.corridorStyle === 'winding';
+  const winding = o.corridorStyle === "winding";
   for (const e of [...tree, ...loops]) {
     const A = rooms[e.a] as Room;
     const B = rooms[e.b] as Room;
     const cost = (c: number): number => {
       const t = d.cells[c];
-      if (t === ROOM) return d.roomIds[c] === A.id || d.roomIds[c] === B.id ? 1 : 6;
+      if (t === ROOM)
+        return d.roomIds[c] === A.id || d.roomIds[c] === B.id ? 1 : 6;
       if (t === CORRIDOR) return 0.6;
       let k = 1 + (winding ? (noise[c] as number) * 3 : 0);
       // Avoid hugging other rooms' walls or running beside corridors, which makes ragged openings.
       for (const [dx, dy] of DIRS) {
         const nc = c + dy * d.width + dx;
         const nt = d.cells[nc];
-        if (nt === ROOM && d.roomIds[nc] !== A.id && d.roomIds[nc] !== B.id) k += 4;
+        if (nt === ROOM && d.roomIds[nc] !== A.id && d.roomIds[nc] !== B.id)
+          k += 4;
         else if (nt === CORRIDOR) k += 0.8;
       }
       return k;
@@ -358,7 +442,10 @@ function connectRooms(d: Dungeon, rng: RNG, o: DungeonOptions, noise: Float32Arr
       (c) => d.roomIds[c] === B.id,
       cost,
       winding ? 0.3 : 2,
-      (c) => 0.6 * (Math.abs((c % d.width) - B.cx) + Math.abs(Math.floor(c / d.width) - B.cy)),
+      (c) =>
+        0.6 *
+        (Math.abs((c % d.width) - B.cx) +
+          Math.abs(Math.floor(c / d.width) - B.cy)),
     );
     if (!path) continue;
     for (const c of path) {
@@ -368,19 +455,33 @@ function connectRooms(d: Dungeon, rng: RNG, o: DungeonOptions, noise: Float32Arr
   }
 }
 
-function placePillars(d: Dungeon, rng: RNG, o: DungeonOptions, pathCells: Set<number>): void {
+function placePillars(
+  d: Dungeon,
+  rng: RNG,
+  o: DungeonOptions,
+  pathCells: Set<number>,
+): void {
   const stairCells = new Set(d.stairs.map((s) => s.y * d.width + s.x));
   for (const r of d.rooms) {
-    if (r.shape !== 'rect' || r.w < 7 || r.h < 7 || !rng.chance(o.pillarChance)) continue;
+    if (r.shape !== "rect" || r.w < 7 || r.h < 7 || !rng.chance(o.pillarChance))
+      continue;
     const spots: [number, number][] = [];
     if (r.w >= r.h) {
-      for (let x = r.x + 2; x <= r.x + r.w - 3; x += 2) spots.push([x, r.y + 2], [x, r.y + r.h - 3]);
+      for (let x = r.x + 2; x <= r.x + r.w - 3; x += 2)
+        spots.push([x, r.y + 2], [x, r.y + r.h - 3]);
     } else {
-      for (let y = r.y + 2; y <= r.y + r.h - 3; y += 2) spots.push([r.x + 2, y], [r.x + r.w - 3, y]);
+      for (let y = r.y + 2; y <= r.y + r.h - 3; y += 2)
+        spots.push([r.x + 2, y], [r.x + r.w - 3, y]);
     }
     for (const [x, y] of spots) {
       const c = y * d.width + x;
-      if (d.cells[c] !== ROOM || pathCells.has(c) || stairCells.has(c) || (x === r.cx && y === r.cy)) continue;
+      if (
+        d.cells[c] !== ROOM ||
+        pathCells.has(c) ||
+        stairCells.has(c) ||
+        (x === r.cx && y === r.cy)
+      )
+        continue;
       d.cells[c] = PILLAR;
     }
   }
@@ -399,17 +500,36 @@ function placeDoors(d: Dungeon, rng: RNG, o: DungeonOptions): void {
       // Only 1-wide entrances get doors: the corridor cell's sides along the wall must be solid.
       const side1 = n + dx * W + dy;
       const side2 = n - dx * W - dy;
-      if (isFloor(cells[side1] as number) || isFloor(cells[side2] as number)) continue;
-      const roomNeighbors = DIRS.filter(([ex, ey]) => cells[n + ey * W + ex] === ROOM).length;
+      if (isFloor(cells[side1] as number) || isFloor(cells[side2] as number))
+        continue;
+      const roomNeighbors = DIRS.filter(
+        ([ex, ey]) => cells[n + ey * W + ex] === ROOM,
+      ).length;
       if (roomNeighbors !== 1) continue;
       used.add(n);
       if (!rng.chance(o.doorChance)) continue;
 
       const roll = rng.float();
-      const type: DoorType = roll < o.secretDoorChance ? 'secret' : roll < o.secretDoorChance + o.lockedDoorChance ? 'locked' : 'normal';
-      const edge = dx !== 0
-        ? { x1: Math.max(x, x + dx), y1: y, x2: Math.max(x, x + dx), y2: y + 1 }
-        : { x1: x, y1: Math.max(y, y + dy), x2: x + 1, y2: Math.max(y, y + dy) };
+      const type: DoorType =
+        roll < o.secretDoorChance
+          ? "secret"
+          : roll < o.secretDoorChance + o.lockedDoorChance
+            ? "locked"
+            : "normal";
+      const edge =
+        dx !== 0
+          ? {
+              x1: Math.max(x, x + dx),
+              y1: y,
+              x2: Math.max(x, x + dx),
+              y2: y + 1,
+            }
+          : {
+              x1: x,
+              y1: Math.max(y, y + dy),
+              x2: x + 1,
+              y2: Math.max(y, y + dy),
+            };
       d.doors.push({ ...edge, type, room: roomIds[c] as number });
     }
   }
@@ -425,18 +545,29 @@ function placeWindows(d: Dungeon, o: DungeonOptions): void {
   const rng = new RNG(`${d.seed}:windows`);
   const W = d.width;
   const stairCells = new Set(d.stairs.map((s) => s.y * W + s.x));
-  const nearDoor = (e: { x1: number; y1: number; x2: number; y2: number }): boolean =>
-    d.doors.some((o) => Math.abs(o.x1 + o.x2 - e.x1 - e.x2) / 2 + Math.abs(o.y1 + o.y2 - e.y1 - e.y2) / 2 < 2);
+  const nearDoor = (e: {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+  }): boolean =>
+    d.doors.some(
+      (o) =>
+        Math.abs(o.x1 + o.x2 - e.x1 - e.x2) / 2 +
+          Math.abs(o.y1 + o.y2 - e.y1 - e.y2) / 2 <
+        2,
+    );
 
   for (const r of d.rooms) {
-    if (r.shape === 'area') continue;
+    if (r.shape === "area") continue;
     for (const [dx, dy] of DIRS) {
       // Wall edges facing this direction, keyed by the row/column they lie on.
       const lines = new Map<number, number[]>();
       for (let y = r.y; y < r.y + r.h; y++) {
         for (let x = r.x; x < r.x + r.w; x++) {
           const c = y * W + x;
-          if (d.roomIds[c] !== r.id || d.cells[c] !== ROOM || stairCells.has(c)) continue;
+          if (d.roomIds[c] !== r.id || d.cells[c] !== ROOM || stairCells.has(c))
+            continue;
           if (d.cells[c + dy * W + dx] !== ROCK) continue;
           const line = dx === 0 ? y : x;
           const list = lines.get(line);
@@ -457,10 +588,23 @@ function placeWindows(d: Dungeon, o: DungeonOptions): void {
           if (run.length < 3 || !rng.chance(o.windowChance)) continue;
           const count = run.length >= 8 ? 2 : 1;
           for (let k = 1; k <= count; k++) {
-            const pos = run[Math.round((k * (run.length - 1)) / (count + 1))] as number;
-            const edge = dx === 0
-              ? { x1: pos, y1: dy < 0 ? line : line + 1, x2: pos + 1, y2: dy < 0 ? line : line + 1 }
-              : { x1: dx < 0 ? line : line + 1, y1: pos, x2: dx < 0 ? line : line + 1, y2: pos + 1 };
+            const pos = run[
+              Math.round((k * (run.length - 1)) / (count + 1))
+            ] as number;
+            const edge =
+              dx === 0
+                ? {
+                    x1: pos,
+                    y1: dy < 0 ? line : line + 1,
+                    x2: pos + 1,
+                    y2: dy < 0 ? line : line + 1,
+                  }
+                : {
+                    x1: dx < 0 ? line : line + 1,
+                    y1: pos,
+                    x2: dx < 0 ? line : line + 1,
+                    y2: pos + 1,
+                  };
             if (!nearDoor(edge)) d.windows.push({ ...edge, room: r.id });
           }
         }
@@ -472,14 +616,27 @@ function placeWindows(d: Dungeon, o: DungeonOptions): void {
 // ---------------------------------------------------------------------------
 // Caverns (cellular automata)
 
-function buildCaves(d: Dungeon, rng: RNG, o: DungeonOptions, noise: Float32Array, pathCells: Set<number>): void {
+function buildCaves(
+  d: Dungeon,
+  rng: RNG,
+  o: DungeonOptions,
+  noise: Float32Array,
+  pathCells: Set<number>,
+): void {
   const { width: W, height: H } = d;
   let solid = new Uint8Array(W * H);
-  const border = (x: number, y: number): boolean => x <= 0 || y <= 0 || x >= W - 1 || y >= H - 1;
+  const border = (x: number, y: number): boolean =>
+    x <= 0 || y <= 0 || x >= W - 1 || y >= H - 1;
   for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) solid[y * W + x] = border(x, y) || rng.chance(o.caveFill) ? 1 : 0;
+    for (let x = 0; x < W; x++)
+      solid[y * W + x] = border(x, y) || rng.chance(o.caveFill) ? 1 : 0;
   }
-  const countSolid = (grid: Uint8Array, x: number, y: number, r: number): number => {
+  const countSolid = (
+    grid: Uint8Array,
+    x: number,
+    y: number,
+    r: number,
+  ): number => {
     let k = 0;
     for (let j = -r; j <= r; j++) {
       for (let i = -r; i <= r; i++) {
@@ -510,12 +667,16 @@ function buildCaves(d: Dungeon, rng: RNG, o: DungeonOptions, noise: Float32Array
 
   // Find connected regions, drop tiny ones and tunnel the rest together.
   let regions = floodRegions(d);
-  for (const reg of regions.filter((r) => r.length < 12)) for (const c of reg) d.cells[c] = ROCK;
-  regions = regions.filter((r) => r.length >= 12).sort((a, b) => b.length - a.length);
+  for (const reg of regions.filter((r) => r.length < 12))
+    for (const c of reg) d.cells[c] = ROCK;
+  regions = regions
+    .filter((r) => r.length >= 12)
+    .sort((a, b) => b.length - a.length);
   if (regions.length === 0) {
     // Degenerate fill: carve a single central chamber so there is always something to play on.
     for (let y = Math.floor(H / 3); y < Math.ceil((2 * H) / 3); y++) {
-      for (let x = Math.floor(W / 3); x < Math.ceil((2 * W) / 3); x++) d.cells[y * W + x] = ROOM;
+      for (let x = Math.floor(W / 3); x < Math.ceil((2 * W) / 3); x++)
+        d.cells[y * W + x] = ROOM;
     }
     regions = floodRegions(d);
   }
@@ -572,15 +733,21 @@ function floodRegions(d: Dungeon): number[][] {
 function placeCaveAreas(d: Dungeon, rng: RNG, o: DungeonOptions): void {
   const { width: W, cells } = d;
   const floor: number[] = [];
-  for (let c = 0; c < cells.length; c++) if (isFloor(cells[c] as number)) floor.push(c);
+  for (let c = 0; c < cells.length; c++)
+    if (isFloor(cells[c] as number)) floor.push(c);
   const openness = (c: number): number => {
     let k = 0;
-    for (let j = -2; j <= 2; j++) for (let i = -2; i <= 2; i++) if (isFloor(cells[c + j * W + i] as number)) k++;
+    for (let j = -2; j <= 2; j++)
+      for (let i = -2; i <= 2; i++)
+        if (isFloor(cells[c + j * W + i] as number)) k++;
     return k;
   };
   let candidates = floor.filter((c) => openness(c) >= 18);
   if (candidates.length < 8) candidates = floor;
-  const count = Math.max(1, Math.min(o.roomCount, Math.floor(floor.length / 40)));
+  const count = Math.max(
+    1,
+    Math.min(o.roomCount, Math.floor(floor.length / 40)),
+  );
 
   // Farthest-point sampling spreads the areas across the cave.
   const pts = [rng.pick(candidates)];
@@ -590,7 +757,10 @@ function placeCaveAreas(d: Dungeon, rng: RNG, o: DungeonOptions): void {
     let best = -1;
     let bestD = -1;
     candidates.forEach((c, i) => {
-      const dd = Math.hypot((c % W) - (last % W), Math.floor(c / W) - Math.floor(last / W));
+      const dd = Math.hypot(
+        (c % W) - (last % W),
+        Math.floor(c / W) - Math.floor(last / W),
+      );
       if (dd < (minDist[i] as number)) minDist[i] = dd;
       if ((minDist[i] as number) > bestD) {
         bestD = minDist[i] as number;
@@ -601,7 +771,18 @@ function placeCaveAreas(d: Dungeon, rng: RNG, o: DungeonOptions): void {
     pts.push(best);
   }
 
-  d.rooms = pts.map((c, id) => newRoom(id, c % W, Math.floor(c / W), 1, 1, 'area', c % W, Math.floor(c / W)));
+  d.rooms = pts.map((c, id) =>
+    newRoom(
+      id,
+      c % W,
+      Math.floor(c / W),
+      1,
+      1,
+      "area",
+      c % W,
+      Math.floor(c / W),
+    ),
+  );
 
   // Multi-source BFS assigns each floor cell to its nearest area.
   const queue = [...pts];
@@ -618,7 +799,8 @@ function placeCaveAreas(d: Dungeon, rng: RNG, o: DungeonOptions): void {
   }
 
   // Like every room, an area's x/y/w/h are the bounds of the squares it owns.
-  for (const r of d.rooms) Object.assign(r, { x: Infinity, y: Infinity, w: 0, h: 0 });
+  for (const r of d.rooms)
+    Object.assign(r, { x: Infinity, y: Infinity, w: 0, h: 0 });
   const maxX = d.rooms.map(() => -1);
   const maxY = d.rooms.map(() => -1);
   for (const c of queue) {
@@ -663,13 +845,18 @@ interface StairCandidate {
   dd: number;
 }
 
-function numberRoomsAndPlaceStairs(d: Dungeon, rng: RNG, pathCells: Set<number>): void {
+function numberRoomsAndPlaceStairs(
+  d: Dungeon,
+  rng: RNG,
+  pathCells: Set<number>,
+): void {
   const { width: W } = d;
   if (d.rooms.length === 0) return;
 
   const entrance = rng.pick(d.rooms);
   const dist = bfsDistances(d, entrance.cy * W + entrance.cx);
-  const distOf = (r: Room): number => (r === entrance ? -1 : (dist[r.cy * W + r.cx] as number));
+  const distOf = (r: Room): number =>
+    r === entrance ? -1 : (dist[r.cy * W + r.cx] as number);
 
   // Number rooms in order of walking distance from the entrance.
   const order = [...d.rooms].sort((a, b) => distOf(a) - distOf(b));
@@ -690,10 +877,11 @@ function numberRoomsAndPlaceStairs(d: Dungeon, rng: RNG, pathCells: Set<number>)
     r.exit = r === exit;
   }
 
-  const placeStair = (room: Room, kind: Stair['kind']): void => {
+  const placeStair = (room: Room, kind: Stair["kind"]): void => {
     const candidates: StairCandidate[] = [];
     for (let c = 0; c < d.cells.length; c++) {
-      if (d.roomIds[c] !== room.id || d.cells[c] !== ROOM || pathCells.has(c)) continue;
+      if (d.roomIds[c] !== room.id || d.cells[c] !== ROOM || pathCells.has(c))
+        continue;
       if (c === room.cy * W + room.cx) continue;
       let rockDir = -1;
       let rocks = 0;
@@ -708,15 +896,27 @@ function numberRoomsAndPlaceStairs(d: Dungeon, rng: RNG, pathCells: Set<number>)
         }
       });
       if (rocks === 1 && !nearCorridor) {
-        candidates.push({ c, dir: rockDir, dd: Math.hypot((c % W) - room.cx, Math.floor(c / W) - room.cy) });
+        candidates.push({
+          c,
+          dir: rockDir,
+          dd: Math.hypot((c % W) - room.cx, Math.floor(c / W) - room.cy),
+        });
       }
     }
     candidates.sort((a, b) => a.dd - b.dd);
-    const pick = candidates.length ? rng.pick(candidates.slice(0, 6)) : { c: room.cy * W + room.cx, dir: 3 };
-    d.stairs.push({ x: pick.c % W, y: Math.floor(pick.c / W), dir: pick.dir, kind, room: room.id });
+    const pick = candidates.length
+      ? rng.pick(candidates.slice(0, 6))
+      : { c: room.cy * W + room.cx, dir: 3 };
+    d.stairs.push({
+      x: pick.c % W,
+      y: Math.floor(pick.c / W),
+      dir: pick.dir,
+      kind,
+      room: room.id,
+    });
   };
-  placeStair(entrance, 'up');
-  if (exit) placeStair(exit, 'down');
+  placeStair(entrance, "up");
+  if (exit) placeStair(exit, "down");
 }
 
 // ---------------------------------------------------------------------------
@@ -755,7 +955,8 @@ class MinHeap {
         const l = 2 * i + 1;
         if (l >= keys.length) break;
         const r = l + 1;
-        const m = r < keys.length && (keys[r] as number) < (keys[l] as number) ? r : l;
+        const m =
+          r < keys.length && (keys[r] as number) < (keys[l] as number) ? r : l;
         if ((keys[m] as number) >= lastK) break;
         keys[i] = keys[m] as number;
         vals[i] = vals[m] as number;
@@ -828,24 +1029,42 @@ export interface DoorSummary {
 }
 
 export function doorSummary(d: Dungeon): DoorSummary {
-  const count = (t: string): number => d.doors.filter((o) => o.type === t).length;
-  return { total: d.doors.length, locked: count('locked'), secret: count('secret') };
+  const count = (t: string): number =>
+    d.doors.filter((o) => o.type === t).length;
+  return {
+    total: d.doors.length,
+    locked: count("locked"),
+    secret: count("secret"),
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Project file (de)serialisation
 
 export function serializeDungeon(d: Dungeon): SerializedDungeon {
-  return { ...d, cells: Array.from(d.cells).join(''), roomIds: Array.from(d.roomIds) };
+  return {
+    ...d,
+    cells: Array.from(d.cells).join(""),
+    roomIds: Array.from(d.roomIds),
+  };
 }
 
 export function deserializeDungeon(obj: unknown): Dungeon {
   const s = obj as Partial<SerializedDungeon> | null;
-  if (!s || typeof s.cells !== 'string' || !Array.isArray(s.roomIds) || typeof s.width !== 'number' || typeof s.height !== 'number') {
-    throw new Error('Not a Dungeon Forge map');
+  if (
+    !s ||
+    typeof s.cells !== "string" ||
+    !Array.isArray(s.roomIds) ||
+    typeof s.width !== "number" ||
+    typeof s.height !== "number"
+  ) {
+    throw new Error("Not a Dungeon Forge map");
   }
-  if (s.cells.length !== s.width * s.height || s.roomIds.length !== s.cells.length) {
-    throw new Error('Map data is corrupt (size mismatch)');
+  if (
+    s.cells.length !== s.width * s.height ||
+    s.roomIds.length !== s.cells.length
+  ) {
+    throw new Error("Map data is corrupt (size mismatch)");
   }
   const full = s as SerializedDungeon;
   return {
@@ -853,7 +1072,12 @@ export function deserializeDungeon(obj: unknown): Dungeon {
     // Maps saved before windows existed have none.
     windows: full.windows ?? [],
     // Maps saved before environments existed work theirs out from the room descriptions.
-    rooms: full.rooms.map((r) => ({ ...r, environment: isEnvironment(r.environment) ? r.environment : detectEnvironment(r.contents) })),
+    rooms: full.rooms.map((r) => ({
+      ...r,
+      environment: isEnvironment(r.environment)
+        ? r.environment
+        : detectEnvironment(r.contents),
+    })),
     props: full.props ?? [],
     // Maps saved before the Lighting tool have no placed lights.
     lights: full.lights ?? [],

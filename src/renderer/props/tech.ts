@@ -1,17 +1,24 @@
 // Sci-fi consoles and cryo pods.
 
-import { inset, outlined } from './draw.ts';
-import type { PropBox, PropPaintContext, PropRenderer } from './types.ts';
+import { inset, outlined } from "./draw.ts";
+import type { PropBox, PropPaintContext, PropRenderer } from "./types.ts";
 
 export class ConsoleRenderer implements PropRenderer {
-  readonly kind = 'console';
+  readonly kind = "console";
   readonly height = 1;
   readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette } = c;
-    const b = inset(box, ppg, box.vertical ? 0.22 : 0.1, box.vertical ? 0.1 : 0.22);
-    outlined(c, palette.metal, () => ctx.roundRect(b.x, b.y, b.w, b.h, ppg * 0.05));
+    const b = inset(
+      box,
+      ppg,
+      box.vertical ? 0.22 : 0.1,
+      box.vertical ? 0.1 : 0.22,
+    );
+    outlined(c, palette.metal, () =>
+      ctx.roundRect(b.x, b.y, b.w, b.h, ppg * 0.05),
+    );
     const s = inset(b, ppg, 0.08);
     ctx.save();
     ctx.shadowColor = palette.glow;
@@ -24,7 +31,8 @@ export class ConsoleRenderer implements PropRenderer {
     for (let i = 0; i < 3; i++) {
       const t = 0.68 + i * 0.1;
       ctx.beginPath();
-      if (box.vertical) ctx.arc(s.x + s.w / 2, s.y + s.h * t, ppg * 0.035, 0, Math.PI * 2);
+      if (box.vertical)
+        ctx.arc(s.x + s.w / 2, s.y + s.h * t, ppg * 0.035, 0, Math.PI * 2);
       else ctx.arc(s.x + s.w * t, s.y + s.h / 2, ppg * 0.035, 0, Math.PI * 2);
       ctx.fill();
     }
@@ -32,14 +40,16 @@ export class ConsoleRenderer implements PropRenderer {
 }
 
 export class CryoPodRenderer implements PropRenderer {
-  readonly kind = 'pod';
+  readonly kind = "pod";
   readonly height = 0.9;
   readonly round = false;
 
   draw(c: PropPaintContext, box: PropBox): void {
     const { ctx, ppg, palette } = c;
     const b = inset(box, ppg, 0.12);
-    outlined(c, palette.metal, () => ctx.roundRect(b.x, b.y, b.w, b.h, Math.min(b.w, b.h) / 2));
+    outlined(c, palette.metal, () =>
+      ctx.roundRect(b.x, b.y, b.w, b.h, Math.min(b.w, b.h) / 2),
+    );
     const g = inset(b, ppg, 0.1);
     ctx.save();
     ctx.globalAlpha = 0.75;

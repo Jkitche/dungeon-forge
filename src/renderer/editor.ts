@@ -3,15 +3,39 @@
 // Every operation mutates the dungeon in place, then calls normalizeDungeon() so rooms,
 // doors and stairs stay consistent with the cell grid, whatever was drawn over what.
 
-import { RNG, randomSeed } from './rng.ts';
-import { CORRIDOR, DIRS, PILLAR, ROCK, ROOM, inRoomShape, isFloor, normalizeOptions } from './generator.ts';
-import type { Door, DoorType, Dungeon, DungeonOptions, MapLight, MapWindow, Room, Stair } from './generator.ts';
-import { createStocker, stockRoom } from './contents.ts';
-import type { RoomContents } from './contents.ts';
-import { getGenre } from './genres.ts';
-import { detectEnvironment } from './environment.ts';
-import { PROP_SPECS, editorFree, fitProp, footprint, propAt } from './clutter.ts';
-import type { Prop, PropKind } from './clutter.ts';
+import { RNG, randomSeed } from "./rng.ts";
+import {
+  CORRIDOR,
+  DIRS,
+  PILLAR,
+  ROCK,
+  ROOM,
+  inRoomShape,
+  isFloor,
+  normalizeOptions,
+} from "./generator.ts";
+import type {
+  Door,
+  DoorType,
+  Dungeon,
+  DungeonOptions,
+  MapLight,
+  MapWindow,
+  Room,
+  Stair,
+} from "./generator.ts";
+import { createStocker, stockRoom } from "./contents.ts";
+import type { RoomContents } from "./contents.ts";
+import { getGenre } from "./genres.ts";
+import { detectEnvironment } from "./environment.ts";
+import {
+  PROP_SPECS,
+  editorFree,
+  fitProp,
+  footprint,
+  propAt,
+} from "./clutter.ts";
+import type { Prop, PropKind } from "./clutter.ts";
 
 export interface Cell {
   x: number;
@@ -33,13 +57,15 @@ export function isEditable(d: Dungeon, x: number, y: number): boolean {
   return x >= 1 && y >= 1 && x < d.width - 1 && y < d.height - 1;
 }
 
-export function createBlankDungeon(input: Partial<DungeonOptions> = {}): Dungeon {
-  const o = normalizeOptions({ ...input, algorithm: 'rooms' });
+export function createBlankDungeon(
+  input: Partial<DungeonOptions> = {},
+): Dungeon {
+  const o = normalizeOptions({ ...input, algorithm: "rooms" });
   const n = o.width * o.height;
   return {
     version: 1,
     seed: o.seed,
-    algorithm: 'rooms',
+    algorithm: "rooms",
     options: o,
     width: o.width,
     height: o.height,
@@ -58,8 +84,17 @@ export function createBlankDungeon(input: Partial<DungeonOptions> = {}): Dungeon
 /** Every editable cell in the rectangle spanned by two corners (in any order). */
 export function rectCells(d: Dungeon, a: Cell, b: Cell): Cell[] {
   const out: Cell[] = [];
-  for (let y = Math.max(1, Math.min(a.y, b.y)); y <= Math.min(d.height - 2, Math.max(a.y, b.y)); y++) {
-    for (let x = Math.max(1, Math.min(a.x, b.x)); x <= Math.min(d.width - 2, Math.max(a.x, b.x)); x++) out.push({ x, y });
+  for (
+    let y = Math.max(1, Math.min(a.y, b.y));
+    y <= Math.min(d.height - 2, Math.max(a.y, b.y));
+    y++
+  ) {
+    for (
+      let x = Math.max(1, Math.min(a.x, b.x));
+      x <= Math.min(d.width - 2, Math.max(a.x, b.x));
+      x++
+    )
+      out.push({ x, y });
   }
   return out;
 }
@@ -90,7 +125,12 @@ export function lineCells(a: Cell, b: Cell): Cell[] {
 // Operations. Each returns whether anything changed.
 
 /** Carves a rectangular room. Squares taken from other rooms now belong to the new one. */
-export function paintRoom(d: Dungeon, a: Cell, b: Cell, contents: RoomContents): boolean {
+export function paintRoom(
+  d: Dungeon,
+  a: Cell,
+  b: Cell,
+  contents: RoomContents,
+): boolean {
   const cells = rectCells(d, a, b);
   if (cells.length === 0) return false;
   const id = d.rooms.reduce((m, r) => Math.max(m, r.id), -1) + 1;
@@ -106,9 +146,19 @@ export function paintRoom(d: Dungeon, a: Cell, b: Cell, contents: RoomContents):
     d.roomIds[i] = id;
   }
   d.rooms.push({
-    id, x, y, w, h, shape: 'rect',
-    cx: x + Math.floor(w / 2), cy: y + Math.floor(h / 2),
-    entrance: false, exit: false, contents, doorCount: 0, environment: detectEnvironment(contents),
+    id,
+    x,
+    y,
+    w,
+    h,
+    shape: "rect",
+    cx: x + Math.floor(w / 2),
+    cy: y + Math.floor(h / 2),
+    entrance: false,
+    exit: false,
+    contents,
+    doorCount: 0,
+    environment: detectEnvironment(contents),
   });
   return commit(d);
 }
@@ -145,7 +195,8 @@ export function togglePillar(d: Dungeon, c: Cell): boolean {
   if (!isEditable(d, c.x, c.y)) return false;
   const i = idx(d, c.x, c.y);
   const t = d.cells[i];
-  if (t === PILLAR) d.cells[i] = (d.roomIds[i] as number) >= 0 ? ROOM : CORRIDOR;
+  if (t === PILLAR)
+    d.cells[i] = (d.roomIds[i] as number) >= 0 ? ROOM : CORRIDOR;
   else if (t === ROOM || t === CORRIDOR) d.cells[i] = PILLAR;
   else return false;
   return commit(d);
@@ -166,14 +217,25 @@ export function edgeAt(fx: number, fy: number): Edge {
 
 /** The two cells either side of an edge: above/below or left/right. */
 function edgeSides(e: Edge): [Cell, Cell] {
-  return e.y1 === e.y2 ? [{ x: e.x1, y: e.y1 - 1 }, { x: e.x1, y: e.y1 }] : [{ x: e.x1 - 1, y: e.y1 }, { x: e.x1, y: e.y1 }];
+  return e.y1 === e.y2
+    ? [
+        { x: e.x1, y: e.y1 - 1 },
+        { x: e.x1, y: e.y1 },
+      ]
+    : [
+        { x: e.x1 - 1, y: e.y1 },
+        { x: e.x1, y: e.y1 },
+      ];
 }
 
-const inside = (d: Dungeon, c: Cell): boolean => c.x >= 0 && c.y >= 0 && c.x < d.width && c.y < d.height;
+const inside = (d: Dungeon, c: Cell): boolean =>
+  c.x >= 0 && c.y >= 0 && c.x < d.width && c.y < d.height;
 
 /** A door needs floor on both sides of the edge. */
 export function canHaveDoor(d: Dungeon, e: Edge): boolean {
-  return edgeSides(e).every((c) => inside(d, c) && isFloor(d.cells[idx(d, c.x, c.y)] as number));
+  return edgeSides(e).every(
+    (c) => inside(d, c) && isFloor(d.cells[idx(d, c.x, c.y)] as number),
+  );
 }
 
 /** A window needs floor on one side of the edge and solid rock on the other. */
@@ -194,31 +256,50 @@ export function toggleWindow(d: Dungeon, e: Edge): boolean {
   return commit(d);
 }
 
-const sameEdge = (a: Edge, b: Edge): boolean => a.x1 === b.x1 && a.y1 === b.y1 && a.x2 === b.x2 && a.y2 === b.y2;
-const DOOR_CYCLE: (DoorType | null)[] = ['normal', 'locked', 'secret', null];
+const sameEdge = (a: Edge, b: Edge): boolean =>
+  a.x1 === b.x1 && a.y1 === b.y1 && a.x2 === b.x2 && a.y2 === b.y2;
+const DOOR_CYCLE: (DoorType | null)[] = ["normal", "locked", "secret", null];
 
 /** Click order on an edge: door → locked → secret → no door. */
 export function cycleDoor(d: Dungeon, e: Edge): boolean {
   if (!canHaveDoor(d, e)) return false;
   const i = d.doors.findIndex((o) => sameEdge(o, e));
   const current = i >= 0 ? (d.doors[i] as Door).type : null;
-  const next = DOOR_CYCLE[(DOOR_CYCLE.indexOf(current) + 1) % DOOR_CYCLE.length] ?? null;
+  const next =
+    DOOR_CYCLE[(DOOR_CYCLE.indexOf(current) + 1) % DOOR_CYCLE.length] ?? null;
   if (i >= 0) d.doors.splice(i, 1);
-  if (next) d.doors.push({ x1: e.x1, y1: e.y1, x2: e.x2, y2: e.y2, type: next, room: -1 });
+  if (next)
+    d.doors.push({
+      x1: e.x1,
+      y1: e.y1,
+      x2: e.x2,
+      y2: e.y2,
+      type: next,
+      room: -1,
+    });
   return commit(d);
 }
 
 /** Click order on a floor square: stairs up → stairs down → none. */
 export function cycleStairs(d: Dungeon, c: Cell): boolean {
-  if (!isEditable(d, c.x, c.y) || !isFloor(d.cells[idx(d, c.x, c.y)] as number)) return false;
+  if (!isEditable(d, c.x, c.y) || !isFloor(d.cells[idx(d, c.x, c.y)] as number))
+    return false;
   const i = d.stairs.findIndex((s) => s.x === c.x && s.y === c.y);
   const existing = d.stairs[i];
   if (!existing) {
     // Lean the stairs against a wall if there is one.
-    const dir = DIRS.findIndex(([dx, dy]) => d.cells[idx(d, c.x + dx, c.y + dy)] === ROCK);
-    d.stairs.push({ x: c.x, y: c.y, dir: dir >= 0 ? dir : 3, kind: 'up', room: -1 });
-  } else if (existing.kind === 'up') {
-    existing.kind = 'down';
+    const dir = DIRS.findIndex(
+      ([dx, dy]) => d.cells[idx(d, c.x + dx, c.y + dy)] === ROCK,
+    );
+    d.stairs.push({
+      x: c.x,
+      y: c.y,
+      dir: dir >= 0 ? dir : 3,
+      kind: "up",
+      room: -1,
+    });
+  } else if (existing.kind === "up") {
+    existing.kind = "down";
   } else {
     d.stairs.splice(i, 1);
   }
@@ -250,11 +331,15 @@ export function rotateProp(d: Dungeon, c: Cell): boolean {
   const free = editorFree(d, i);
   const vertical = !old.vertical;
   // Either the clicked square starts the turned prop, or it's the prop's second square.
-  const anchors = [c, vertical ? { x: c.x, y: c.y - 1 } : { x: c.x - 1, y: c.y }];
+  const anchors = [
+    c,
+    vertical ? { x: c.x, y: c.y - 1 } : { x: c.x - 1, y: c.y },
+  ];
   for (const a of anchors) {
     const second = vertical ? { x: a.x, y: a.y + 1 } : { x: a.x + 1, y: a.y };
     if (!free(a.x, a.y) || !free(second.x, second.y)) continue;
-    if (d.roomIds[idx(d, a.x, a.y)] !== d.roomIds[idx(d, second.x, second.y)]) continue;
+    if (d.roomIds[idx(d, a.x, a.y)] !== d.roomIds[idx(d, second.x, second.y)])
+      continue;
     d.props[i] = { ...old, x: a.x, y: a.y, vertical };
     return commit(d);
   }
@@ -262,7 +347,8 @@ export function rotateProp(d: Dungeon, c: Cell): boolean {
 }
 
 /** Index of the placed light on a square, or -1. */
-export const lightAt = (d: Dungeon, c: Cell): number => d.lights.findIndex((l) => l.x === c.x && l.y === c.y);
+export const lightAt = (d: Dungeon, c: Cell): number =>
+  d.lights.findIndex((l) => l.x === c.x && l.y === c.y);
 
 /** Where a light goes: a floor square, and for a wall torch which of its walls (an index into DIRS). */
 export interface LightSpot extends Cell {
@@ -283,24 +369,41 @@ export function lightSpotAt(d: Dungeon, fx: number, fy: number): LightSpot {
     const [a, b] = edgeSides(e);
     const floor = isFloor(d.cells[idx(d, a.x, a.y)] as number) ? a : b;
     const rock = floor === a ? b : a;
-    return { ...floor, wall: DIRS.findIndex(([dx, dy]) => floor.x + dx === rock.x && floor.y + dy === rock.y) };
+    return {
+      ...floor,
+      wall: DIRS.findIndex(
+        ([dx, dy]) => floor.x + dx === rock.x && floor.y + dy === rock.y,
+      ),
+    };
   }
   return { x: Math.floor(fx), y: Math.floor(fy) };
 }
 
 /** True when a light can go here: floor, and for a torch, rock behind the wall. */
 function canHaveLight(d: Dungeon, s: LightSpot): boolean {
-  if (!inside(d, s) || !isFloor(d.cells[idx(d, s.x, s.y)] as number)) return false;
+  if (!inside(d, s) || !isFloor(d.cells[idx(d, s.x, s.y)] as number))
+    return false;
   if (s.wall === undefined) return true;
   const [dx, dy] = DIRS[s.wall] ?? [0, 0];
   const behind = { x: s.x + dx, y: s.y + dy };
-  return (dx !== 0 || dy !== 0) && inside(d, behind) && d.cells[idx(d, behind.x, behind.y)] === ROCK;
+  return (
+    (dx !== 0 || dy !== 0) &&
+    inside(d, behind) &&
+    d.cells[idx(d, behind.x, behind.y)] === ROCK
+  );
 }
 
 /** Places a light of the given reach on a floor square, or as a torch on one of its walls. */
 export function placeLight(d: Dungeon, s: LightSpot, radius: number): boolean {
-  if (!isEditable(d, s.x, s.y) || !canHaveLight(d, s) || lightAt(d, s) >= 0) return false;
-  d.lights.push({ x: s.x, y: s.y, radius, room: -1, ...(s.wall === undefined ? {} : { wall: s.wall }) });
+  if (!isEditable(d, s.x, s.y) || !canHaveLight(d, s) || lightAt(d, s) >= 0)
+    return false;
+  d.lights.push({
+    x: s.x,
+    y: s.y,
+    radius,
+    room: -1,
+    ...(s.wall === undefined ? {} : { wall: s.wall }),
+  });
   return commit(d);
 }
 
@@ -341,11 +444,15 @@ function commit(d: Dungeon): boolean {
 }
 
 /** Room key contents for a newly drawn room, avoiding names already on the map. */
-export function stockNewRoom(d: Dungeon, rng: RNG = new RNG(randomSeed())): RoomContents {
+export function stockNewRoom(
+  d: Dungeon,
+  rng: RNG = new RNG(randomSeed()),
+): RoomContents {
   const decks = createStocker(rng, getGenre(d.options.genre), false);
   const taken = new Set(d.rooms.map((r) => r.contents?.name));
   const contents = stockRoom(rng, decks, { isEntrance: false, isExit: false });
-  for (let i = 0; i < 30 && taken.has(contents.name); i++) contents.name = decks.name();
+  for (let i = 0; i < 30 && taken.has(contents.name); i++)
+    contents.name = decks.name();
   return contents;
 }
 
@@ -385,10 +492,13 @@ export function normalizeDungeon(d: Dungeon): void {
     const w = Math.max(...xs) - x + 1;
     const h = Math.max(...ys) - y + 1;
 
-    if (r.shape !== 'area') {
+    if (r.shape !== "area") {
       const sameBounds = x === r.x && y === r.y && w === r.w && h === r.h;
-      const matchesShape = sameBounds && r.shape !== 'irregular' && matchesShapeMask(d, r, list.length);
-      if (!matchesShape) r.shape = list.length === w * h ? 'rect' : 'irregular';
+      const matchesShape =
+        sameBounds &&
+        r.shape !== "irregular" &&
+        matchesShapeMask(d, r, list.length);
+      if (!matchesShape) r.shape = list.length === w * h ? "rect" : "irregular";
     }
     Object.assign(r, { x, y, w, h });
 
@@ -428,7 +538,9 @@ export function normalizeDungeon(d: Dungeon): void {
     const key = `${o.x1},${o.y1},${o.x2},${o.y2}`;
     if (seenDoors.has(key) || !canHaveDoor(d, o)) return false;
     seenDoors.add(key);
-    const owner = edgeSides(o).map((c) => roomIds[idx(d, c.x, c.y)] as number).find((id) => id >= 0);
+    const owner = edgeSides(o)
+      .map((c) => roomIds[idx(d, c.x, c.y)] as number)
+      .find((id) => id >= 0);
     o.room = owner ?? -1;
     return true;
   });
@@ -439,7 +551,9 @@ export function normalizeDungeon(d: Dungeon): void {
     const key = `${w.x1},${w.y1},${w.x2},${w.y2}`;
     if (seenWindows.has(key) || !canHaveWindow(d, w)) return false;
     seenWindows.add(key);
-    const floor = edgeSides(w).find((c) => isFloor(cells[idx(d, c.x, c.y)] as number)) as Cell;
+    const floor = edgeSides(w).find((c) =>
+      isFloor(cells[idx(d, c.x, c.y)] as number),
+    ) as Cell;
     w.room = roomIds[idx(d, floor.x, floor.y)] as number;
     return true;
   });
@@ -448,8 +562,19 @@ export function normalizeDungeon(d: Dungeon): void {
   const stairSquares = new Set(d.stairs.map((s) => idx(d, s.x, s.y)));
   const covered = new Set<number>();
   d.props = d.props.filter((p) => {
-    const squares = footprint(p).map((f) => (inside(d, f) ? idx(d, f.x, f.y) : -1));
-    if (squares.some((c) => c < 0 || !isFloor(cells[c] as number) || stairSquares.has(c) || covered.has(c))) return false;
+    const squares = footprint(p).map((f) =>
+      inside(d, f) ? idx(d, f.x, f.y) : -1,
+    );
+    if (
+      squares.some(
+        (c) =>
+          c < 0 ||
+          !isFloor(cells[c] as number) ||
+          stairSquares.has(c) ||
+          covered.has(c),
+      )
+    )
+      return false;
     for (const c of squares) covered.add(c);
     p.room = roomIds[squares[0] as number] as number;
     return true;
@@ -476,8 +601,8 @@ export function normalizeDungeon(d: Dungeon): void {
   });
 
   for (const r of d.rooms) {
-    r.entrance = d.stairs.some((s) => s.room === r.id && s.kind === 'up');
-    r.exit = d.stairs.some((s) => s.room === r.id && s.kind === 'down');
+    r.entrance = d.stairs.some((s) => s.room === r.id && s.kind === "up");
+    r.exit = d.stairs.some((s) => s.room === r.id && s.kind === "down");
     r.doorCount = d.doors.filter((o) => o.room === r.id).length;
   }
 }

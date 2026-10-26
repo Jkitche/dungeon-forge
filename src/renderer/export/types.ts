@@ -5,8 +5,8 @@
 // the app supplies an ExportContext (map data and an image renderer) and an ExportTarget
 // (where the user chose to save), then writes whatever files the strategy returns.
 
-import type { Dungeon } from '../generator.ts';
-import type { SafeHtml } from '../text.ts';
+import type { Dungeon } from "../generator.ts";
+import type { SafeHtml } from "../text.ts";
 
 export interface RenderRequest {
   ppg?: number;

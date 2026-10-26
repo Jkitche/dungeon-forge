@@ -4,12 +4,22 @@
 // Pure data, no DOM: detection reads a room's text, and environmentField works out how
 // strongly each square is affected.
 
-import { DIRS, isFloor } from './cells.ts';
-import type { RoomContents } from './contents.ts';
-import type { Door, Dungeon } from './generator.ts';
+import { DIRS, isFloor } from "./cells.ts";
+import type { RoomContents } from "./contents.ts";
+import type { Door, Dungeon } from "./generator.ts";
 
 export type Environment =
-  | 'lava' | 'fire' | 'ice' | 'frost' | 'heat' | 'webs' | 'crystals' | 'fungus' | 'toxic' | 'water' | 'smoke';
+  | "lava"
+  | "fire"
+  | "ice"
+  | "frost"
+  | "heat"
+  | "webs"
+  | "crystals"
+  | "fungus"
+  | "toxic"
+  | "water"
+  | "smoke";
 
 export interface EnvironmentInfo {
   /** Shown as a tag in the room key. */
@@ -17,17 +27,17 @@ export interface EnvironmentInfo {
 }
 
 export const ENVIRONMENTS: Record<Environment, EnvironmentInfo> = {
-  lava: { label: 'Lava' },
-  fire: { label: 'Burning' },
-  ice: { label: 'Iced over' },
-  frost: { label: 'Frozen' },
-  heat: { label: 'Scorching' },
-  fungus: { label: 'Overgrown' },
-  toxic: { label: 'Toxic' },
-  water: { label: 'Flooded' },
-  smoke: { label: 'Smoky' },
-  webs: { label: 'Webbed' },
-  crystals: { label: 'Crystalline' },
+  lava: { label: "Lava" },
+  fire: { label: "Burning" },
+  ice: { label: "Iced over" },
+  frost: { label: "Frozen" },
+  heat: { label: "Scorching" },
+  fungus: { label: "Overgrown" },
+  toxic: { label: "Toxic" },
+  water: { label: "Flooded" },
+  smoke: { label: "Smoky" },
+  webs: { label: "Webbed" },
+  crystals: { label: "Crystalline" },
 };
 
 /**
@@ -37,18 +47,33 @@ export const ENVIRONMENTS: Record<Environment, EnvironmentInfo> = {
  * frozen mid-task", "a frozen error message"), not icy.
  */
 const RULES: readonly [Environment, RegExp][] = [
-  ['lava', /\b(lava|magma|molten)\b/],
+  ["lava", /\b(lava|magma|molten)\b/],
   // Flames now, not old burns: "burnt insulation" and "scorched from an old fire" are smoke.
-  ['fire', /\b(flames?|burning|burns|ablaze|blaze|inferno)\b/],
-  ['ice', /\b(ice|icy|icicles?|glacier)\b|frozen lake|ice-bound/],
-  ['frost', /\b(frost|freezing|snow)\b|breath fogs|temperature drops|cryo bay/],
-  ['heat', /\b(boiler|foundry|smithy|furnace|steam(?!-powered)|scald\w*|boiling|heat|ember\w*)\b|unnaturally warm|reactor core/],
-  ['webs', /\b(cobwebs?|webs?|webbed|webbing)\b|spider nest/],
-  ['crystals', /\bcrystal (hollow|vug|cave|cavern|growths?)\b|crystals (jut|grow|glow|line)/],
-  ['fungus', /\b(moss|fungus|fungal|mushroom\w*|spore\w*|mou?ld\w*|resin|glowworm)\b/],
-  ['toxic', /\b(toxic|poison\w*|radiation|rad|plague|gas)\b|sickly green/],
-  ['water', /\b(water|flood\w*|pool|cistern|well|drip\w*|sunken|lake|puddles?|coolant)\b/],
-  ['smoke', /\b(smoke|ash|ashes|soot|scorch\w*|burnt|charred|smoulder\w*|smolder\w*)\b/],
+  ["fire", /\b(flames?|burning|burns|ablaze|blaze|inferno)\b/],
+  ["ice", /\b(ice|icy|icicles?|glacier)\b|frozen lake|ice-bound/],
+  ["frost", /\b(frost|freezing|snow)\b|breath fogs|temperature drops|cryo bay/],
+  [
+    "heat",
+    /\b(boiler|foundry|smithy|furnace|steam(?!-powered)|scald\w*|boiling|heat|ember\w*)\b|unnaturally warm|reactor core/,
+  ],
+  ["webs", /\b(cobwebs?|webs?|webbed|webbing)\b|spider nest/],
+  [
+    "crystals",
+    /\bcrystal (hollow|vug|cave|cavern|growths?)\b|crystals (jut|grow|glow|line)/,
+  ],
+  [
+    "fungus",
+    /\b(moss|fungus|fungal|mushroom\w*|spore\w*|mou?ld\w*|resin|glowworm)\b/,
+  ],
+  ["toxic", /\b(toxic|poison\w*|radiation|rad|plague|gas)\b|sickly green/],
+  [
+    "water",
+    /\b(water|flood\w*|pool|cistern|well|drip\w*|sunken|lake|puddles?|coolant)\b/,
+  ],
+  [
+    "smoke",
+    /\b(smoke|ash|ashes|soot|scorch\w*|burnt|charred|smoulder\w*|smolder\w*)\b/,
+  ],
 ];
 
 /**
@@ -57,17 +82,23 @@ const RULES: readonly [Environment, RegExp][] = [
  * it ("a well", "a scrying pool") that shouldn't flood the whole room. Traps are left out
  * too: a freezing-gas trap that hasn't gone off shouldn't frost the map and warn players.
  */
-export function detectEnvironment(contents: RoomContents | null | undefined): Environment | null {
+export function detectEnvironment(
+  contents: RoomContents | null | undefined,
+): Environment | null {
   if (!contents) return null;
   const text = `${contents.name} ${contents.atmosphere}`.toLowerCase();
   for (const [env, pattern] of RULES) if (pattern.test(text)) return env;
   return null;
 }
 
-export const isEnvironment = (v: unknown): v is Environment => typeof v === 'string' && Object.hasOwn(ENVIRONMENTS, v);
+export const isEnvironment = (v: unknown): v is Environment =>
+  typeof v === "string" && Object.hasOwn(ENVIRONMENTS, v);
 
 /** Environments the map shows, and how many squares each reaches beyond a doorway. */
-export const SPREAD: Partial<Record<Environment, number>> = { frost: 3, heat: 2 };
+export const SPREAD: Partial<Record<Environment, number>> = {
+  frost: 3,
+  heat: 2,
+};
 
 export interface EnvironmentCell {
   env: Environment;
@@ -93,7 +124,8 @@ export interface EnvironmentOpening {
   strength: number;
 }
 
-const edgeKey = (a: number, b: number): string => (a < b ? `${a}:${b}` : `${b}:${a}`);
+const edgeKey = (a: number, b: number): string =>
+  a < b ? `${a}:${b}` : `${b}:${a}`;
 
 /** The two squares either side of a door, as cell indexes. */
 function doorSquares(d: Dungeon, o: Door): [number, number] {
@@ -114,7 +146,10 @@ function doorsByEdge(d: Dungeon): Map<string, Door> {
  * The ways out of every affected room: each floor-to-floor edge leaving the room, except
  * through secret doors. Each comes with the square just outside, where the spill starts.
  */
-function exits(d: Dungeon, doors: Map<string, Door>): (EnvironmentOpening & { room: number; outside: number })[] {
+function exits(
+  d: Dungeon,
+  doors: Map<string, Door>,
+): (EnvironmentOpening & { room: number; outside: number })[] {
   const W = d.width;
   const out: (EnvironmentOpening & { room: number; outside: number })[] = [];
   for (const r of d.rooms) {
@@ -126,10 +161,19 @@ function exits(d: Dungeon, doors: Map<string, Door>): (EnvironmentOpening & { ro
         const n = c + dy * W + dx;
         if (d.roomIds[n] === r.id || !isFloor(d.cells[n] as number)) continue;
         const door = doors.get(edgeKey(c, n));
-        if (door?.type === 'secret') continue;
+        if (door?.type === "secret") continue;
         const x = (c % W) + 0.5 + dx / 2;
         const y = Math.floor(c / W) + 0.5 + dy / 2;
-        out.push({ env, x, y, dx, dy, strength: door ? DOOR_LEAK : 1, room: r.id, outside: n });
+        out.push({
+          env,
+          x,
+          y,
+          dx,
+          dy,
+          strength: door ? DOOR_LEAK : 1,
+          room: r.id,
+          outside: n,
+        });
       }
     }
   }
@@ -143,8 +187,20 @@ function exits(d: Dungeon, doors: Map<string, Door>): (EnvironmentOpening & { ro
 export function environmentOpenings(d: Dungeon): EnvironmentOpening[] {
   const kept: EnvironmentOpening[] = [];
   for (const e of exits(d, doorsByEdge(d))) {
-    if (kept.some((k) => k.env === e.env && Math.hypot(k.x - e.x, k.y - e.y) < 1.5)) continue;
-    kept.push({ env: e.env, x: e.x, y: e.y, dx: e.dx, dy: e.dy, strength: e.strength });
+    if (
+      kept.some(
+        (k) => k.env === e.env && Math.hypot(k.x - e.x, k.y - e.y) < 1.5,
+      )
+    )
+      continue;
+    kept.push({
+      env: e.env,
+      x: e.x,
+      y: e.y,
+      dx: e.dx,
+      dy: e.dy,
+      strength: e.strength,
+    });
   }
   return kept;
 }
@@ -169,22 +225,29 @@ export function environmentField(d: Dungeon): Map<number, EnvironmentCell> {
     const spread = env ? SPREAD[env] : undefined;
     if (!env || spread === undefined) continue;
     const inRoom = (c: number): boolean => d.roomIds[c] === r.id;
-    for (let c = 0; c < d.cells.length; c++) if (inRoom(c)) put(c, { env, intensity: 1, source: true });
+    for (let c = 0; c < d.cells.length; c++)
+      if (inRoom(c)) put(c, { env, intensity: 1, source: true });
 
     // Breadth-first from the doorways outward, so squares are reached in order of distance;
     // strength carries the doorway's leak along. A square is only revisited by a stronger path.
     const best = new Map<number, number>();
-    const queue: [number, number, number][] = allExits.filter((e) => e.room === r.id).map((e) => [e.outside, 1, e.strength]);
+    const queue: [number, number, number][] = allExits
+      .filter((e) => e.room === r.id)
+      .map((e) => [e.outside, 1, e.strength]);
     for (let i = 0; i < queue.length; i++) {
       const [c, steps, strength] = queue[i] as [number, number, number];
       if ((best.get(c) ?? 0) >= strength) continue;
       best.set(c, strength);
-      put(c, { env, intensity: strength * (1 - (steps - 1) / (spread + 0.5)) * 0.9, source: false });
+      put(c, {
+        env,
+        intensity: strength * (1 - (steps - 1) / (spread + 0.5)) * 0.9,
+        source: false,
+      });
       if (steps >= spread) continue;
       for (const [dx, dy] of DIRS) {
         const n = c + dy * W + dx;
         if (inRoom(n) || !isFloor(d.cells[n] as number)) continue;
-        if (doors.get(edgeKey(c, n))?.type === 'secret') continue;
+        if (doors.get(edgeKey(c, n))?.type === "secret") continue;
         queue.push([n, steps + 1, strength]);
       }
     }

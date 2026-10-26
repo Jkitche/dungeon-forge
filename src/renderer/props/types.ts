@@ -4,8 +4,8 @@
 // the canvas, the size of a square, a seeded random source and the theme's prop palette,
 // so they work with any theme and can be tested against a fake canvas.
 
-import type { RNG } from '../rng.ts';
-import type { PropKind } from '../clutter.ts';
+import type { RNG } from "../rng.ts";
+import type { PropKind } from "../clutter.ts";
 
 /** Colours for room clutter. Light themes use pale fills with dark outlines, like a hand-drawn map. */
 export interface PropPalette {

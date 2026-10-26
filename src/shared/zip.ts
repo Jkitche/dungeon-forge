@@ -19,7 +19,8 @@ const CRC_TABLE = (() => {
 
 export function crc32(bytes: Uint8Array): number {
   let c = 0xffffffff;
-  for (let i = 0; i < bytes.length; i++) c = (CRC_TABLE[(c ^ (bytes[i] as number)) & 0xff] as number) ^ (c >>> 8);
+  for (let i = 0; i < bytes.length; i++)
+    c = (CRC_TABLE[(c ^ (bytes[i] as number)) & 0xff] as number) ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
 
@@ -35,7 +36,8 @@ export function buildZip(entries: ZipEntry[]): Uint8Array {
 
   for (const entry of entries) {
     const name = encoder.encode(entry.path);
-    const data = typeof entry.data === 'string' ? encoder.encode(entry.data) : entry.data;
+    const data =
+      typeof entry.data === "string" ? encoder.encode(entry.data) : entry.data;
     const crc = crc32(data);
 
     const local = new Uint8Array(30 + name.length);
