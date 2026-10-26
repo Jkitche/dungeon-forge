@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PROP_KINDS, editorFree, fitProp, footprint, propAt, settingProps } from '../src/renderer/clutter.ts';
-import { clearMap, createBlankDungeon, cycleDoor, cycleStairs, edgeAt, eraseCells, lightAt, lineCells, normalizeDungeon, paintCorridor, paintRoom, placeLight, placeProp, rectCells, removeLight, removeProp, restore, rotateProp, setLightRadius, snapshot, stockNewRoom, togglePillar, toggleWindow } from '../src/renderer/editor.ts';
+import { clearMap, createBlankDungeon, cycleDoor, cycleStairs, edgeAt, eraseCells, lightAt, lightSpotAt, lineCells, normalizeDungeon, paintCorridor, paintRoom, placeLight, placeProp, rectCells, removeLight, removeProp, restore, rotateProp, setLightRadius, snapshot, stockNewRoom, togglePillar, toggleWindow } from '../src/renderer/editor.ts';
 import { buildFguModule } from '../src/renderer/export/fantasygrounds.ts';
 import { buildFoundryScene } from '../src/renderer/export/foundry.ts';
 import { buildRoomKeyMarkdown } from '../src/renderer/export/roomkey.ts';
@@ -96,7 +96,7 @@ test('random edits on generated maps never leave the dungeon inconsistent', () =
           if (k === 0) placeProp(d, a, rng.pick(PROP_KINDS));
           else if (k === 1) rotateProp(d, a);
           else if (k === 2) removeProp(d, a);
-          else if (k === 3) placeLight(d, a, rng.int(1, 8));
+          else if (k === 3) placeLight(d, rng.chance(0.5) ? a : { ...a, wall: rng.int(0, 3) }, rng.int(1, 8));
           else removeLight(d, a);
           break;
         }
@@ -269,4 +269,31 @@ test('lights go on floor, one per square; they can be resized and removed, and g
   eraseCells(d, [{ x: 4, y: 4 }]);
   assert.deepEqual(d.lights, []);
   assertConsistent(d, 'lights');
+});
+
+test('clicking close to a wall that faces rock mounts a torch on it, from either side', () => {
+  const d = createBlankDungeon({ seed: 'torch', width: 20, height: 14 });
+  paintRoom(d, { x: 2, y: 2 }, { x: 8, y: 7 }, stockNewRoom(d, new RNG('t')));
+  paintCorridor(d, lineCells({ x: 9, y: 4 }, { x: 12, y: 4 }));
+  assert.deepEqual(lightSpotAt(d, 4.5, 2.1), { x: 4, y: 2, wall: 3 }, 'top wall, from inside');
+  assert.deepEqual(lightSpotAt(d, 4.5, 1.8), { x: 4, y: 2, wall: 3 }, 'top wall, from the rock side');
+  assert.deepEqual(lightSpotAt(d, 8.85, 6.5), { x: 8, y: 6, wall: 0 }, 'right wall');
+  assert.deepEqual(lightSpotAt(d, 2.2, 5.5), { x: 2, y: 5, wall: 2 }, 'left wall');
+  assert.deepEqual(lightSpotAt(d, 5.5, 7.9), { x: 5, y: 7, wall: 1 }, 'bottom wall');
+  assert.deepEqual(lightSpotAt(d, 4.5, 2.5), { x: 4, y: 2 }, 'the middle of a square stays free-standing');
+  assert.deepEqual(lightSpotAt(d, 8.9, 4.5), { x: 8, y: 4 }, 'an opening into a corridor is not a wall');
+  assert.deepEqual(lightSpotAt(d, 4.5, 3.95), { x: 4, y: 3 }, 'between two floor squares is not a wall');
+});
+
+test('a torch needs rock behind its wall, and goes when its wall does', () => {
+  const d = createBlankDungeon({ seed: 'torch-wall', width: 20, height: 14 });
+  paintRoom(d, { x: 2, y: 2 }, { x: 8, y: 7 }, stockNewRoom(d, new RNG('t')));
+  assert.ok(!placeLight(d, { x: 4, y: 4, wall: 3 }, 4), 'floor behind it, not a wall');
+  assert.ok(placeLight(d, { x: 4, y: 2, wall: 3 }, 4));
+  assert.deepEqual(d.lights, [{ x: 4, y: 2, radius: 4, room: 0, wall: 3 }]);
+  assert.ok(!placeLight(d, { x: 4, y: 2 }, 4), 'still one light per square');
+  // A corridor dug through the wall takes the torch down with it.
+  paintCorridor(d, lineCells({ x: 4, y: 1 }, { x: 4, y: 1 }));
+  assert.deepEqual(d.lights, []);
+  assertConsistent(d, 'torch');
 });

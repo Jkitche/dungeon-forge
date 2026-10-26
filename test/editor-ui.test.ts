@@ -302,3 +302,22 @@ test('the Lighting tool shows every light and its reach, and where a new one wou
   h.editor.pointerMove(at(8.5, 7.5));
   assert.deepEqual(arcs(overlay()), [], 'other tools hide the lights');
 });
+
+test('the Lighting tool mounts a torch when clicked close to a wall, and shows which wall', () => {
+  const h = harness();
+  drag(h.editor, [[3.5, 3.5], [10.5, 9.5]]);
+  h.editor.setTool('lighting');
+  const overlay = (): ReturnType<typeof recordingContext> => {
+    const rec = recordingContext();
+    h.editor.drawOverlay(rec.ctx, 40);
+    return rec;
+  };
+  h.editor.pointerMove(at(6.5, 3.1));
+  const hover = overlay();
+  assert.ok(hover.calls.some((c) => c.name === 'lineTo'), 'the wall is highlighted');
+  assert.ok(!hover.calls.some((c) => c.name === 'strokeRect'), 'not the square');
+  click(h.editor, 6.5, 3.1);
+  assert.deepEqual(h.d.lights.map((l) => [l.x, l.y, l.wall]), [[6, 3, 3]]);
+  click(h.editor, 6.5, 3.15);
+  assert.equal(h.d.lights.length, 0, 'clicking the torch again takes it down');
+});

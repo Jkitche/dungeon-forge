@@ -178,6 +178,27 @@ test('lighting leaves a map with no light sources untouched', () => {
   assert.deepEqual(render(d, { ppg: 20, lighting: true }).rec.calls, render(d, { ppg: 20 }).rec.calls);
 });
 
+test('wall torches are drawn small, on their wall; free-standing lights draw nothing', () => {
+  const d = createBlankDungeon({ seed: 'torch-draw', width: 16, height: 10 });
+  paintRoom(d, { x: 2, y: 2 }, { x: 8, y: 6 }, {
+    name: 'Hall', kind: 'empty', atmosphere: '', feature: 'a bare floor', monster: null, trap: null, special: null, treasure: null, note: null,
+  });
+  const plain = render(d, { ppg: 20 }).rec.calls;
+  d.lights.push({ x: 4, y: 4, radius: 4, room: 0 });
+  assert.deepEqual(render(d, { ppg: 20 }).rec.calls, plain, 'a free-standing light is only light');
+  d.lights.push({ x: 5, y: 2, radius: 4, room: 0, wall: 3 });
+  const calls = render(d, { ppg: 20 }).rec.calls;
+  const arcs = calls.filter((c) => c.name === 'arc').slice(-2);
+  assert.equal(arcs.length, 2, 'the flame and its heart');
+  for (const a of arcs) {
+    const [x, y, r] = a.args as number[];
+    assert.ok(Math.abs((x as number) - 110) < 1e-9 && (y as number) > 40 && (y as number) < 50, 'just inside the top wall');
+    assert.ok((r as number) < 20 * 0.1, 'smaller than a tenth of a square');
+  }
+  // The bracket starts on the wall line itself.
+  assert.ok(calls.some((c) => c.name === 'moveTo' && c.args[0] === 110 && c.args[1] === 40));
+});
+
 test('frozen rooms wash blue and scorching rooms red, only when turned on', () => {
   const d = createBlankDungeon({ seed: 'tint', width: 24, height: 12 });
   const room = (atmosphere: string) => ({

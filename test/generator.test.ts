@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { canHaveWindow } from '../src/renderer/editor.ts';
-import { CORRIDOR, deserializeDungeon, doorSummary, generateDungeon, isFloor, normalizeOptions, ROOM, serializeDungeon } from '../src/renderer/generator.ts';
+import { CORRIDOR, deserializeDungeon, doorSummary, generateDungeon, isFloor, lightOrigin, normalizeOptions, ROOM, serializeDungeon, TORCH_OFFSET } from '../src/renderer/generator.ts';
 import { GENRE_KEYS } from '../src/renderer/genres.ts';
 import { reachableFloor, floorCount, variants } from './helpers.ts';
 
@@ -105,6 +105,14 @@ test('placed lights are saved, and maps saved before the Lighting tool still ope
   assert.deepEqual(deserializeDungeon(saved).lights, [{ x: 3, y: 4, radius: 6, room: 0 }]);
   delete saved.lights;
   assert.deepEqual(deserializeDungeon(saved).lights, []);
+});
+
+test('a free-standing light shines from the middle of its square, a torch from just in front of its wall', () => {
+  assert.deepEqual(lightOrigin({ x: 3, y: 4 }), { x: 3.5, y: 4.5 });
+  assert.deepEqual(lightOrigin({ x: 3, y: 4, wall: 0 }), { x: 3.5 + TORCH_OFFSET, y: 4.5 });
+  assert.deepEqual(lightOrigin({ x: 3, y: 4, wall: 3 }), { x: 3.5, y: 4.5 - TORCH_OFFSET });
+  // Soft-shadow samples spread about a tenth of a square, so the flame must stay clear of the wall line.
+  assert.ok(TORCH_OFFSET + 0.12 < 0.5);
 });
 
 test('maps saved before clutter existed still open', () => {

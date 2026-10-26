@@ -114,6 +114,13 @@ test('placed lights shine too, and a light set on a prop is not shaded by it', (
   assert.equal(onProp?.prop, undefined, 'before the crate was there');
 });
 
+test('a wall torch shines from just in front of its wall', () => {
+  const d = furnishedRoom();
+  d.lights.push({ x: 5, y: 3, radius: 4, room: 0, wall: 3 });
+  const torch = lightSources(d, TEST_PALETTE).at(-1);
+  assert.ok(torch && torch.x === 5.5 && torch.y < 3.5 && torch.y > 3, `at ${torch?.x}, ${torch?.y}`);
+});
+
 test('light comes from braziers and screens, not windows', () => {
   const d = furnishedRoom();
   assert.equal(d.windows.length, 1);

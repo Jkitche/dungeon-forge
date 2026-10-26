@@ -63,7 +63,7 @@ Click **Edit map** (Ctrl+Shift+E) to edit the current map and choose a tool from
 | Pillar | P | Click a floor square to add or remove a pillar. |
 | Clutter | F | Pick a prop from the **Prop** list (the setting's own props come first), then click floor to place it. Click a prop to remove it, Shift-click to turn it. |
 | Stairs | S | Click a floor square: stairs up, then down, then none. |
-| Lighting | L | Pick a reach from the **Radius** list (5 ft candle to 60 ft), then click floor to place a light. Click a light to remove it, Shift-click to give it the chosen radius. While the tool is selected, each light's reach is outlined. Placing a light turns on **Light sources**. |
+| Lighting | L | Pick a reach from the **Radius** list (5 ft candle to 60 ft), then click floor to place a light, or click close to a wall that faces rock to mount a torch on it (drawn as a small flame on an iron bracket, shining from the wall). Click a light to remove it, Shift-click to give it the chosen radius. While the tool is selected, each light's reach is outlined. Placing a light turns on **Light sources**. |
 
 Undo with Ctrl+Z and redo with Ctrl+Shift+Z. In edit mode, right-drag or hold Space to pan. New rooms are stocked from the current setting's tables and appear in the room key straight away. Walls are worked out from the floor, so every export works on hand-drawn maps too. Once a map has been edited, the seed no longer reproduces it, so the app asks before anything would regenerate over your work. Save it with **Save** to keep it.
 

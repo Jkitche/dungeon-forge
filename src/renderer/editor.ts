@@ -264,10 +264,43 @@ export function rotateProp(d: Dungeon, c: Cell): boolean {
 /** Index of the placed light on a square, or -1. */
 export const lightAt = (d: Dungeon, c: Cell): number => d.lights.findIndex((l) => l.x === c.x && l.y === c.y);
 
-/** Places a light of the given reach on a floor square. */
-export function placeLight(d: Dungeon, c: Cell, radius: number): boolean {
-  if (!isEditable(d, c.x, c.y) || !isFloor(d.cells[idx(d, c.x, c.y)] as number) || lightAt(d, c) >= 0) return false;
-  d.lights.push({ x: c.x, y: c.y, radius, room: -1 });
+/** Where a light goes: a floor square, and for a wall torch which of its walls (an index into DIRS). */
+export interface LightSpot extends Cell {
+  wall?: number;
+}
+
+/** Clicking this close to a wall (in squares) mounts a torch on it. */
+const WALL_REACH = 0.3;
+
+/**
+ * Where a click at (fx, fy) puts a light: on the wall when it's close to a wall that faces
+ * rock (from either side), otherwise in the middle of the square.
+ */
+export function lightSpotAt(d: Dungeon, fx: number, fy: number): LightSpot {
+  const e = edgeAt(fx, fy);
+  const near = e.y1 === e.y2 ? Math.abs(fy - e.y1) : Math.abs(fx - e.x1);
+  if (near <= WALL_REACH && canHaveWindow(d, e)) {
+    const [a, b] = edgeSides(e);
+    const floor = isFloor(d.cells[idx(d, a.x, a.y)] as number) ? a : b;
+    const rock = floor === a ? b : a;
+    return { ...floor, wall: DIRS.findIndex(([dx, dy]) => floor.x + dx === rock.x && floor.y + dy === rock.y) };
+  }
+  return { x: Math.floor(fx), y: Math.floor(fy) };
+}
+
+/** True when a light can go here: floor, and for a torch, rock behind the wall. */
+function canHaveLight(d: Dungeon, s: LightSpot): boolean {
+  if (!inside(d, s) || !isFloor(d.cells[idx(d, s.x, s.y)] as number)) return false;
+  if (s.wall === undefined) return true;
+  const [dx, dy] = DIRS[s.wall] ?? [0, 0];
+  const behind = { x: s.x + dx, y: s.y + dy };
+  return (dx !== 0 || dy !== 0) && inside(d, behind) && d.cells[idx(d, behind.x, behind.y)] === ROCK;
+}
+
+/** Places a light of the given reach on a floor square, or as a torch on one of its walls. */
+export function placeLight(d: Dungeon, s: LightSpot, radius: number): boolean {
+  if (!isEditable(d, s.x, s.y) || !canHaveLight(d, s) || lightAt(d, s) >= 0) return false;
+  d.lights.push({ x: s.x, y: s.y, radius, room: -1, ...(s.wall === undefined ? {} : { wall: s.wall }) });
   return commit(d);
 }
 
@@ -422,11 +455,11 @@ export function normalizeDungeon(d: Dungeon): void {
     return true;
   });
 
-  // Placed lights: only on floor, one per square.
+  // Placed lights: only on floor, one per square; a torch goes when its wall does.
   const seenLights = new Set<number>();
   d.lights = d.lights.filter((l) => {
     const c = inside(d, l) ? idx(d, l.x, l.y) : -1;
-    if (c < 0 || seenLights.has(c) || !isFloor(cells[c] as number)) return false;
+    if (c < 0 || seenLights.has(c) || !canHaveLight(d, l)) return false;
     seenLights.add(c);
     l.room = roomIds[c] as number;
     return true;

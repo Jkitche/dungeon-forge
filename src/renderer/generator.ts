@@ -97,13 +97,27 @@ export interface Stair {
   room: number;
 }
 
-/** A light placed in the editor, shining from the middle of square (x, y). */
+/**
+ * A light placed in the editor on square (x, y): free-standing in the middle of the
+ * square, or a torch mounted on one of its walls.
+ */
 export interface MapLight {
   x: number;
   y: number;
   /** Reach in squares. */
   radius: number;
   room: number;
+  /** For a wall torch: which wall, as an index into DIRS pointing from the square to the rock. */
+  wall?: number;
+}
+
+/** How far a wall torch's flame sits from the middle of its square, toward the wall. */
+export const TORCH_OFFSET = 0.3;
+
+/** Where a placed light shines from, in grid units. */
+export function lightOrigin(l: Pick<MapLight, 'x' | 'y' | 'wall'>): { x: number; y: number } {
+  const [dx, dy] = l.wall === undefined ? [0, 0] : (DIRS[l.wall] ?? [0, 0]);
+  return { x: l.x + 0.5 + dx * TORCH_OFFSET, y: l.y + 0.5 + dy * TORCH_OFFSET };
 }
 
 export interface Dungeon {

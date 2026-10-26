@@ -6,6 +6,7 @@
 
 import { PROP_SPECS, footprint, propAt } from './clutter.ts';
 import type { Prop } from './clutter.ts';
+import { lightOrigin } from './generator.ts';
 import type { Dungeon } from './generator.ts';
 import { PILLAR } from './cells.ts';
 import { eachWallUnit, PILLAR_RADIUS } from './walls.ts';
@@ -165,7 +166,7 @@ export function lightSources(d: Dungeon, palette: PropPalette): LightSource[] {
   for (const l of d.lights) {
     // A light set on a prop (a lamp on a table, a torch on a crate) isn't shaded by it.
     const prop = propAt(d, l.x, l.y);
-    lights.push({ x: l.x + 0.5, y: l.y + 0.5, radius: l.radius, colour: palette.glow, ...(prop >= 0 ? { prop } : {}) });
+    lights.push({ ...lightOrigin(l), radius: l.radius, colour: palette.glow, ...(prop >= 0 ? { prop } : {}) });
   }
   return lights;
 }

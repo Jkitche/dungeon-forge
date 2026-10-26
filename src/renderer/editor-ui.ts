@@ -4,12 +4,12 @@
 
 import {
   canHaveDoor, canHaveWindow, toggleWindow, placeProp, removeProp, rotateProp, cycleDoor, cycleStairs, edgeAt, eraseCells, isEditable, lineCells, paintCorridor, paintRoom,
-  rectCells, restore, snapshot, togglePillar, lightAt, placeLight, removeLight, setLightRadius,
+  rectCells, restore, snapshot, togglePillar, lightAt, lightSpotAt, placeLight, removeLight, setLightRadius,
 } from './editor.ts';
 import type { Cell, Snapshot } from './editor.ts';
 import { editorFree, fitProp, footprint, propAt } from './clutter.ts';
 import type { PropKind } from './clutter.ts';
-import { isFloor } from './generator.ts';
+import { DIRS, isFloor, lightOrigin } from './generator.ts';
 import type { Dungeon } from './generator.ts';
 import type { RoomContents } from './contents.ts';
 
@@ -31,7 +31,7 @@ export const TOOLS: readonly Tool[] = [
   { id: 'pillar', label: 'Pillar', key: 'p', hint: 'Click a floor square to add or remove a pillar.' },
   { id: 'clutter', label: 'Clutter', key: 'f', hint: 'Click floor to place the chosen prop, click a prop to remove it, Shift-click to turn it.' },
   { id: 'stairs', label: 'Stairs', key: 's', hint: 'Click a floor square: stairs up, then stairs down, then none.' },
-  { id: 'lighting', label: 'Lighting', key: 'l', hint: 'Click floor to place a light of the chosen radius, click a light to remove it, Shift-click to give it the chosen radius.' },
+  { id: 'lighting', label: 'Lighting', key: 'l', hint: 'Click floor to place a light of the chosen radius, or click close to a wall to mount a torch on it. Click a light to remove it, Shift-click to give it the chosen radius.' },
 ];
 
 /** Radius choices for the Lighting tool, in squares, with familiar light sources for scale. */
@@ -162,9 +162,10 @@ export class MapEditor {
         return;
       }
       case 'lighting': {
-        const onLight = lightAt(this.host.dungeon(), cell) >= 0;
-        if (onLight) this.apply((d) => (e.shiftKey ? setLightRadius(d, cell, this.lightRadius) : removeLight(d, cell)));
-        else this.apply((d) => placeLight(d, cell, this.lightRadius));
+        const spot = lightSpotAt(this.host.dungeon(), fx, fy);
+        const onLight = lightAt(this.host.dungeon(), spot) >= 0;
+        if (onLight) this.apply((d) => (e.shiftKey ? setLightRadius(d, spot, this.lightRadius) : removeLight(d, spot)));
+        else this.apply((d) => placeLight(d, spot, this.lightRadius));
         return;
       }
       default: {
@@ -256,13 +257,29 @@ export class MapEditor {
         const y = Math.floor(fy);
         const prop = this.tool === 'clutter' ? d.props[propAt(d, x, y)] : undefined;
         if (this.tool === 'lighting') {
-          // The light a click would remove or change, or the reach of a new one.
-          const on = lightAt(d, { x, y }) >= 0;
-          const ok = on || (isEditable(d, x, y) && isFloor(d.cells[y * d.width + x] as number));
+          // The light a click would remove or change, or where a new one would go and how far it reaches.
+          const spot = lightSpotAt(d, fx, fy);
+          const on = lightAt(d, spot) >= 0;
+          const ok = on || (isEditable(d, spot.x, spot.y) && isFloor(d.cells[spot.y * d.width + spot.x] as number));
           ctx.strokeStyle = ok ? ACCENT : 'rgba(220, 70, 60, 0.8)';
           ctx.lineWidth = lw;
-          ctx.strokeRect(x * ppg, y * ppg, ppg, ppg);
-          if (ok && !on) this.lightRing(ctx, ppg, lw, x, y, this.lightRadius, ACCENT);
+          if (spot.wall === undefined) {
+            ctx.strokeRect(spot.x * ppg, spot.y * ppg, ppg, ppg);
+          } else {
+            // A torch: highlight the stretch of wall it would hang on.
+            const [dx, dy] = DIRS[spot.wall] ?? [0, 0];
+            const mx = (spot.x + 0.5 + dx * 0.5) * ppg;
+            const my = (spot.y + 0.5 + dy * 0.5) * ppg;
+            ctx.save();
+            ctx.lineWidth = Math.max(3, ppg * 0.16);
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(mx - dy * ppg * 0.5, my - dx * ppg * 0.5);
+            ctx.lineTo(mx + dy * ppg * 0.5, my + dx * ppg * 0.5);
+            ctx.stroke();
+            ctx.restore();
+          }
+          if (ok && !on) this.lightRing(ctx, ppg, lw, lightOrigin(spot), this.lightRadius, ACCENT);
         } else if (prop) {
           // Outline the whole prop the click would remove or turn.
           ctx.strokeStyle = ACCENT;
@@ -292,21 +309,23 @@ export class MapEditor {
   /** Every placed light: a dot where it sits and a ring showing how far it reaches. */
   private drawLights(ctx: CanvasRenderingContext2D, ppg: number, lw: number): void {
     for (const l of this.host.dungeon().lights) {
+      const o = lightOrigin(l);
       ctx.fillStyle = 'rgba(255, 214, 120, 0.95)';
       ctx.beginPath();
-      ctx.arc((l.x + 0.5) * ppg, (l.y + 0.5) * ppg, ppg * 0.14, 0, Math.PI * 2);
+      ctx.arc(o.x * ppg, o.y * ppg, ppg * 0.14, 0, Math.PI * 2);
       ctx.fill();
-      this.lightRing(ctx, ppg, lw, l.x, l.y, l.radius, 'rgba(255, 214, 120, 0.7)');
+      this.lightRing(ctx, ppg, lw, o, l.radius, 'rgba(255, 214, 120, 0.7)');
     }
   }
 
-  private lightRing(ctx: CanvasRenderingContext2D, ppg: number, lw: number, x: number, y: number, radius: number, colour: string): void {
+  /** A dashed ring showing how far a light at `origin` (grid units) reaches. */
+  private lightRing(ctx: CanvasRenderingContext2D, ppg: number, lw: number, origin: { x: number; y: number }, radius: number, colour: string): void {
     ctx.save();
     ctx.strokeStyle = colour;
     ctx.lineWidth = lw;
     ctx.setLineDash([ppg * 0.2, ppg * 0.15]);
     ctx.beginPath();
-    ctx.arc((x + 0.5) * ppg, (y + 0.5) * ppg, radius * ppg, 0, Math.PI * 2);
+    ctx.arc(origin.x * ppg, origin.y * ppg, radius * ppg, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }

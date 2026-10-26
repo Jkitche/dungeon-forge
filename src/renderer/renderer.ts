@@ -5,13 +5,13 @@
 // floor, doors, stairs, pillars, decorations). The painters live in tables below.
 
 import { RNG } from './rng.ts';
-import { isFloor, isOpen, ROCK, ROOM, CORRIDOR, PILLAR, DIRS } from './generator.ts';
+import { isFloor, isOpen, lightOrigin, ROCK, ROOM, CORRIDOR, PILLAR, DIRS } from './generator.ts';
 import type { Dungeon, Door } from './generator.ts';
 import { computeWalls, eachWallUnit, PILLAR_RADIUS } from './walls.ts';
 import { PROP_SPECS } from './clutter.ts';
 import { PROP_RENDERERS } from './props/index.ts';
 import type { PropPaintContext, PropPalette } from './props/index.ts';
-import { blob, bevel } from './props/draw.ts';
+import { blob, bevel, withAlpha } from './props/draw.ts';
 import { castShadow, depthAmount, drawAmbientOcclusion, drawLighting, drawPropShadows, drawWallBevel, lightSources } from './depth.ts';
 import type { DepthLevel } from './depth.ts';
 import { fillPhoto, photoTexture, PHOTO_SQUARES } from './photo.ts';
@@ -289,6 +289,7 @@ export function renderDungeon(canvas: HTMLCanvasElement, d: Dungeon, opts: Rende
     if (d.cells[c] === PILLAR) PILLAR_PAINTERS[theme.pillarStyle](p, (c % d.width) + 0.5, Math.floor(c / d.width) + 0.5);
   }
   drawWindows(p);
+  drawTorches(p);
   runDecor('afterWalls');
   drawDoors(p);
   if (p.gm && (opts.showLabels ?? true)) drawLabels(p);
@@ -1038,6 +1039,52 @@ function drawWindows({ ctx, d, ppg, theme }: Paint): void {
       ctx.lineTo(mx, my + len / 2);
     }
     ctx.stroke();
+  }
+}
+
+/**
+ * Wall-mounted torches: a short iron bracket out from the wall, holding a small flame with
+ * a warm halo. Small enough to sit on the wall without covering the square in front of it.
+ */
+function drawTorches({ ctx, d, ppg, theme }: Paint): void {
+  for (const l of d.lights) {
+    if (l.wall === undefined) continue;
+    const [dx, dy] = DIRS[l.wall] ?? [0, 0];
+    const flame = lightOrigin(l);
+    const fx = flame.x * ppg;
+    const fy = flame.y * ppg;
+    // The bracket runs from the middle of the wall line to just behind the flame.
+    const wx = (l.x + 0.5 + dx * 0.5) * ppg;
+    const wy = (l.y + 0.5 + dy * 0.5) * ppg;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = theme.props.line;
+    ctx.lineWidth = Math.max(2, ppg * 0.09);
+    ctx.beginPath();
+    ctx.moveTo(wx, wy);
+    ctx.lineTo(fx, fy);
+    ctx.stroke();
+    ctx.strokeStyle = theme.props.metal;
+    ctx.lineWidth = Math.max(1, ppg * 0.045);
+    ctx.stroke();
+
+    const halo = ppg * 0.24;
+    const g = ctx.createRadialGradient(fx, fy, 0, fx, fy, halo);
+    g.addColorStop(0, withAlpha(theme.props.glow, 0.6));
+    g.addColorStop(1, withAlpha(theme.props.glow, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(fx - halo, fy - halo, halo * 2, halo * 2);
+    // Flame: an orange teardrop pointing away from the wall, with a yellow heart.
+    for (const [colour, r] of [['#e8641e', 0.085], ['#ffd27a', 0.045]] as const) {
+      ctx.fillStyle = colour;
+      ctx.beginPath();
+      ctx.arc(fx, fy, ppg * r, 0, Math.PI * 2);
+      ctx.moveTo(fx - dy * ppg * r, fy + dx * ppg * r);
+      ctx.lineTo(fx - dx * ppg * r * 2.2, fy - dy * ppg * r * 2.2);
+      ctx.lineTo(fx + dy * ppg * r, fy - dx * ppg * r);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 }
 
