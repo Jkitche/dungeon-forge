@@ -35,6 +35,11 @@ import {
   stockNewRoom,
   togglePillar,
   toggleWindow,
+  canHaveMonster,
+  monsterAt,
+  placeAllMonsters,
+  placeMonster,
+  removeMonster,
 } from "../src/renderer/editor.ts";
 import { buildFguModule } from "../src/renderer/export/fantasygrounds.ts";
 import { buildFoundryScene } from "../src/renderer/export/foundry.ts";
@@ -160,7 +165,7 @@ test("random edits on generated maps never leave the dungeon inconsistent", () =
     for (let i = 0; i < 300; i++) {
       const a = { x: rng.int(-2, d.width + 1), y: rng.int(-2, d.height + 1) };
       const b = { x: a.x + rng.int(-6, 6), y: a.y + rng.int(-6, 6) };
-      switch (rng.int(0, 6)) {
+      switch (rng.int(0, 7)) {
         case 0:
           paintRoom(d, a, b, stockNewRoom(d, rng));
           break;
@@ -188,6 +193,13 @@ test("random edits on generated maps never leave the dungeon inconsistent", () =
               rng.int(1, 8),
             );
           else removeLight(d, a);
+          break;
+        }
+        case 6: {
+          const k = rng.int(0, 2);
+          if (k === 0) placeMonster(d, a);
+          else if (k === 1) removeMonster(d, a);
+          else placeAllMonsters(d);
           break;
         }
         default:
@@ -503,4 +515,113 @@ test("a torch needs rock behind its wall, and goes when its wall does", () => {
   paintCorridor(d, lineCells({ x: 4, y: 1 }, { x: 4, y: 1 }));
   assert.deepEqual(d.lights, []);
   assertConsistent(d, "torch");
+});
+
+/** A blank map with a monster room and an empty room joined by a door, and a corridor. */
+function monsterMap() {
+  const d = createBlankDungeon({ seed: "tokens", width: 24, height: 14 });
+  const contents = (monster: string | null) => ({
+    name: "Chamber",
+    kind: monster ? ("monster" as const) : ("empty" as const),
+    atmosphere: "",
+    feature: "a bare floor",
+    monster,
+    trap: null,
+    special: null,
+    treasure: null,
+    note: null,
+  });
+  paintRoom(
+    d,
+    { x: 2, y: 2 },
+    { x: 8, y: 7 },
+    contents("Goblin scouts (1d6+2)"),
+  );
+  paintRoom(d, { x: 10, y: 2 }, { x: 15, y: 7 }, contents(null));
+  paintCorridor(d, lineCells({ x: 9, y: 4 }, { x: 9, y: 4 }));
+  paintCorridor(d, lineCells({ x: 16, y: 4 }, { x: 20, y: 4 }));
+  return d;
+}
+
+test("monster tokens go on floor in rooms that have monsters, one per square", () => {
+  const d = monsterMap();
+  assert.ok(placeMonster(d, { x: 4, y: 4 }));
+  assert.deepEqual(d.monsters, [{ x: 4, y: 4, room: 0 }]);
+  assert.ok(!placeMonster(d, { x: 4, y: 4 }), "one per square");
+  assert.ok(
+    !canHaveMonster(d, { x: 12, y: 4 }),
+    "the other room has no monsters",
+  );
+  assert.ok(!placeMonster(d, { x: 18, y: 4 }), "not in a corridor");
+  assert.ok(!placeMonster(d, { x: 20, y: 10 }), "not on rock");
+  assert.equal(monsterAt(d, { x: 4, y: 4 }), 0);
+  assert.ok(removeMonster(d, { x: 4, y: 4 }));
+  assert.ok(!removeMonster(d, { x: 4, y: 4 }));
+  assert.deepEqual(d.monsters, []);
+});
+
+test("Place all fills each monster room with its average, clear of stairs, props and the room number", () => {
+  const d = monsterMap();
+  cycleStairs(d, { x: 3, y: 3 });
+  placeProp(d, { x: 6, y: 6 }, "crate");
+  assert.ok(placeAllMonsters(d));
+  const room = d.rooms[0];
+  assert.ok(room);
+  assert.equal(d.monsters.length, 6, "1d6+2 averages 6");
+  for (const m of d.monsters) {
+    assert.equal(m.room, 0);
+    assert.ok(!(m.x === 3 && m.y === 3), "not on the stairs");
+    assert.ok(!(m.x === 6 && m.y === 6), "not on the crate");
+    assert.ok(!(m.x === room.cx && m.y === room.cy), "not on the room number");
+  }
+  assertConsistent(d, "place all");
+  const first = structuredClone(d.monsters);
+  assert.ok(!placeAllMonsters(d), "rooms with tokens are left alone");
+
+  const again = monsterMap();
+  cycleStairs(again, { x: 3, y: 3 });
+  placeProp(again, { x: 6, y: 6 }, "crate");
+  placeAllMonsters(again);
+  assert.deepEqual(
+    again.monsters,
+    first,
+    "the same map always places the same way",
+  );
+});
+
+test("tokens go when their floor does, and Clear and undo handle them", () => {
+  const d = monsterMap();
+  placeMonster(d, { x: 4, y: 4 });
+  placeMonster(d, { x: 5, y: 5 });
+  const before = snapshot(d);
+  eraseCells(d, [{ x: 4, y: 4 }]);
+  assert.deepEqual(d.monsters, [{ x: 5, y: 5, room: 0 }]);
+  restore(d, before);
+  assert.equal(d.monsters.length, 2);
+  assert.ok(clearMap(d));
+  assert.deepEqual(d.monsters, []);
+});
+
+test("a door between two rooms counts for both, and counts follow edits", () => {
+  const d = createBlankDungeon({ seed: "shared-door", width: 24, height: 12 });
+  paintRoom(d, { x: 2, y: 2 }, { x: 9, y: 7 }, stockNewRoom(d, new RNG("a")));
+  paintRoom(d, { x: 10, y: 2 }, { x: 15, y: 7 }, stockNewRoom(d, new RNG("b")));
+  assert.ok(cycleDoor(d, edgeAt(10.02, 4.5)));
+  assert.deepEqual(
+    d.rooms.map((r) => r.doorCount),
+    [1, 1],
+    "the door opens into both rooms",
+  );
+  assert.ok(cycleDoor(d, edgeAt(10.02, 5.5)));
+  assert.deepEqual(
+    d.rooms.map((r) => r.doorCount),
+    [2, 2],
+  );
+  // Taking a door away updates both rooms too.
+  for (let k = 0; k < 3; k++) cycleDoor(d, edgeAt(10.02, 5.5));
+  assert.deepEqual(
+    d.rooms.map((r) => r.doorCount),
+    [1, 1],
+  );
+  assertConsistent(d, "door counts");
 });

@@ -1,15 +1,54 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from "electron";
+import {
+  clipboard,
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  Menu,
+  shell,
+} from "electron";
 import type { MenuItemConstructorOptions } from "electron";
 import path from "node:path";
+import os from "node:os";
 import fs from "node:fs/promises";
-import { watchFile } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  watchFile,
+  writeFileSync,
+} from "node:fs";
 import type {
   MenuAction,
   OpenRequest,
   OpenedFile,
+  Recovery,
   SaveRequest,
   WriteRequest,
 } from "../shared/ipc.ts";
+import {
+  buildCrashReport,
+  issueUrl,
+  summarizeSession,
+} from "../shared/diagnostics.ts";
+import {
+  askForConsent,
+  captureRendererError,
+  crashReportsEnabled,
+  flushTelemetry,
+  setCrashReports,
+  startTelemetry,
+  telemetryAvailable,
+} from "./telemetry.ts";
+import type {
+  CrashInfo,
+  CrashReport,
+  Environment,
+} from "../shared/diagnostics.ts";
 
 // Compiled layout: dist/main/main.js, dist/main/preload.cjs, dist/renderer/index.html
 const here = import.meta.dirname;
@@ -42,7 +81,213 @@ function createWindow(): void {
   win.on("closed", () => {
     win = null;
   });
+  // The window's process crashed or was killed: report it, then offer to reload, which
+  // brings the map back.
+  win.webContents.on("render-process-gone", (_e, details) => {
+    if (details.reason === "clean-exit") return;
+    writeCrashReport({
+      kind: "renderer-gone",
+      message: `The window crashed (${details.reason})`,
+      details: { reason: details.reason, exitCode: details.exitCode },
+    });
+    if (lastSession) {
+      pendingRecovery = {
+        project: lastSession,
+        savedAt: new Date().toISOString(),
+        reason: "renderer-gone",
+      };
+    }
+    // Not the blocking version: the main process must keep running meanwhile, so the
+    // crash report can be sent.
+    void dialog
+      .showMessageBox({
+        type: "error",
+        title: "Dungeon Forge",
+        message: "The window crashed.",
+        detail:
+          "A crash report was saved. Reload to get your map back, or quit and it will be offered back next time.",
+        buttons: ["Reload", "Quit"],
+        defaultId: 0,
+      })
+      .then(async ({ response }) => {
+        if (response === 0) win?.webContents.reload();
+        else {
+          // Quit without the normal shutdown, so the map is still offered back next time.
+          await flushTelemetry();
+          app.exit(1);
+        }
+      });
+  });
 }
+
+// ---------------------------------------------------------------------------
+// Crash recovery and reports
+//
+// The window keeps the current map in a session file as you work; quitting normally
+// deletes it. Finding it at the next start means the app didn't shut down properly, so
+// the map is offered back. Errors and crashes also write a report (what happened, the
+// setup, and the map at the time) to the crash-reports folder, which Help › Report a
+// Problem turns into a GitHub issue for the user to review and send.
+
+// Only one copy runs at a time: a second one would mistake the first one's session file
+// for a crash, and delete it on quitting. Launching again just brings the window forward.
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+  process.exit(0);
+}
+app.on("second-instance", () => {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+});
+
+// Automatic crash reports (with the user's consent; see telemetry.ts). As early as
+// possible, so crashes during startup are caught too.
+startTelemetry();
+
+const ISSUES_URL = "https://github.com/Jkitche/dungeon-forge/issues/new";
+/** Older reports beyond this many are deleted. */
+const KEEP_REPORTS = 20;
+const sessionFile = path.join(app.getPath("userData"), "session.dungeon.json");
+const crashDir = path.join(app.getPath("userData"), "crash-reports");
+
+let lastSession: string | undefined;
+let pendingRecovery: Recovery | null = null;
+
+function environment(): Environment {
+  return {
+    appVersion: app.getVersion(),
+    electron: process.versions.electron ?? "",
+    chrome: process.versions.chrome ?? "",
+    node: process.versions.node,
+    platform: process.platform,
+    arch: process.arch,
+    osRelease: os.release(),
+  };
+}
+
+function writeCrashReport(info: CrashInfo, session = lastSession): void {
+  try {
+    mkdirSync(crashDir, { recursive: true });
+    const report = buildCrashReport(info, environment(), new Date(), session);
+    writeFileSync(
+      path.join(crashDir, `crash-${report.id}.json`),
+      JSON.stringify(report, null, 2),
+    );
+    const old = reportFiles().slice(KEEP_REPORTS);
+    for (const f of old) rmSync(path.join(crashDir, f), { force: true });
+    console.error(`[crash report] ${info.kind}: ${info.message}`);
+  } catch (err) {
+    console.error("Could not write a crash report:", err);
+  }
+}
+
+/** Report file names, newest first. */
+function reportFiles(): string[] {
+  if (!existsSync(crashDir)) return [];
+  return readdirSync(crashDir)
+    .filter((f) => /^crash-.*\.json$/.test(f))
+    .sort()
+    .reverse();
+}
+
+function latestReport(): CrashReport | null {
+  const newest = reportFiles()[0];
+  if (!newest) return null;
+  try {
+    return JSON.parse(
+      readFileSync(path.join(crashDir, newest), "utf8"),
+    ) as CrashReport;
+  } catch {
+    return null;
+  }
+}
+
+/** Writes the session file in one step, so a crash mid-write never leaves half a map. */
+function saveSession(project: string): void {
+  lastSession = project;
+  try {
+    mkdirSync(path.dirname(sessionFile), { recursive: true });
+    writeFileSync(`${sessionFile}.tmp`, project);
+    renameSync(`${sessionFile}.tmp`, sessionFile);
+  } catch (err) {
+    console.error("Could not save the session:", err);
+  }
+}
+
+// A session file left from last time means the app didn't shut down normally.
+if (existsSync(sessionFile)) {
+  try {
+    const project = readFileSync(sessionFile, "utf8");
+    pendingRecovery = {
+      project,
+      savedAt: statSync(sessionFile).mtime.toISOString(),
+      reason: "unclean-exit",
+    };
+    lastSession = project;
+    writeCrashReport(
+      {
+        kind: "unclean-exit",
+        message: "Dungeon Forge didn't shut down normally last time",
+      },
+      project,
+    );
+  } catch (err) {
+    console.error("Could not read the last session:", err);
+  }
+}
+
+ipcMain.handle("session-save", (_e, project: string): void =>
+  saveSession(String(project)),
+);
+ipcMain.handle(
+  "report-error",
+  (_e, info: CrashInfo, project?: string): void => {
+    if (typeof project === "string") saveSession(project);
+    const report: CrashInfo = {
+      kind:
+        info.kind === "unhandled-rejection"
+          ? "unhandled-rejection"
+          : "renderer-error",
+      message: String(info.message ?? "Unknown error"),
+      ...(info.stack ? { stack: String(info.stack) } : {}),
+    };
+    writeCrashReport(report);
+    captureRendererError(
+      report,
+      lastSession === undefined ? undefined : summarizeSession(lastSession),
+    );
+  },
+);
+ipcMain.handle("take-recovery", (): Recovery | null => {
+  const r = pendingRecovery;
+  pendingRecovery = null;
+  return r;
+});
+
+function mainError(err: unknown): void {
+  const e = err instanceof Error ? err : new Error(String(err));
+  writeCrashReport({
+    kind: "main-error",
+    message: e.message,
+    ...(e.stack ? { stack: e.stack } : {}),
+  });
+  // Sentry catches the error itself; let the report go out before the message box, which
+  // blocks until dismissed. Then exit without the normal shutdown, so the session file
+  // stays for recovery.
+  void flushTelemetry().finally(() => {
+    dialog.showErrorBox(
+      "Dungeon Forge has to close",
+      `Something went wrong: ${e.message}\n\nYour map was saved and will be offered back next time. Help › Report a Problem can send the details to the developer.`,
+    );
+    app.exit(1);
+  });
+}
+process.on("uncaughtException", mainError);
+process.on("unhandledRejection", mainError);
+// Being told to stop (e.g. by `npm run dev` restarting the app) is a normal shutdown.
+process.on("SIGTERM", () => app.quit());
+app.on("will-quit", () => rmSync(sessionFile, { force: true }));
 
 // Under `npm run dev`, the dev script touches this file after each renderer rebuild.
 if (process.env.DUNGEON_FORGE_DEV) {
@@ -79,6 +324,16 @@ function buildMenu(): void {
         { type: "separator" },
         { label: "Open Map…", accelerator: "CmdOrCtrl+O", click: send("open") },
         { label: "Save Map…", accelerator: "CmdOrCtrl+S", click: send("save") },
+        {
+          label: "Copy Map Code",
+          accelerator: "CmdOrCtrl+Shift+C",
+          click: send("copy-code"),
+        },
+        {
+          label: "Paste Map Code",
+          accelerator: "CmdOrCtrl+Shift+V",
+          click: send("paste-code"),
+        },
         { type: "separator" },
         { label: "Export…", accelerator: "CmdOrCtrl+E", click: send("export") },
         { type: "separator" },
@@ -111,6 +366,28 @@ function buildMenu(): void {
     {
       label: "Help",
       submenu: [
+        {
+          label: "Report a Problem…",
+          click: () =>
+            void shell.openExternal(
+              issueUrl(ISSUES_URL, latestReport(), environment(), os.homedir()),
+            ),
+        },
+        {
+          label: "Open Crash Reports Folder",
+          click: () => {
+            mkdirSync(crashDir, { recursive: true });
+            void shell.openPath(crashDir);
+          },
+        },
+        {
+          label: "Send Crash Reports Automatically",
+          type: "checkbox",
+          checked: crashReportsEnabled(),
+          enabled: telemetryAvailable(),
+          click: (item) => setCrashReports(item.checked),
+        },
+        { type: "separator" },
         {
           label: "About Universal VTT format",
           click: () =>
@@ -177,6 +454,12 @@ ipcMain.handle(
   },
 );
 
+// Map codes go through the clipboard as plain text.
+ipcMain.handle("clipboard-read", (): Promise<string> => clipboard.readText());
+ipcMain.handle("clipboard-write", (_e, text: string): Promise<void> =>
+  clipboard.writeText(String(text)),
+);
+
 ipcMain.handle("show-in-folder", (_e, p: string): void => {
   const target = path.resolve(String(p));
   if (writtenPaths.has(target)) shell.showItemInFolder(target);
@@ -185,6 +468,11 @@ ipcMain.handle("show-in-folder", (_e, p: string): void => {
 void app.whenReady().then(() => {
   buildMenu();
   createWindow();
+  // Asked once, after the window is up; the answer also updates the Help menu.
+  win?.webContents.once("did-finish-load", () => {
+    if (!win) return;
+    void askForConsent(win).then(buildMenu);
+  });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

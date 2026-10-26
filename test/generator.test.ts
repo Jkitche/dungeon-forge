@@ -12,6 +12,7 @@ import {
   lightOrigin,
   normalizeOptions,
   ROOM,
+  roomOpenings,
   serializeDungeon,
   TORCH_OFFSET,
 } from "../src/renderer/generator.ts";
@@ -263,4 +264,32 @@ test("doorSummary counts doors by type", () => {
   assert.equal(s.locked, d.doors.filter((o) => o.type === "locked").length);
   assert.equal(s.secret, d.doors.filter((o) => o.type === "secret").length);
   assert.ok(s.locked > 0 && s.secret > 0);
+});
+
+test("roomOpenings lists every door into a room and the windows in its walls", () => {
+  for (const seed of ["openings-1", "openings-2", "openings-3"]) {
+    const d = generateDungeon({ seed, windowChance: 1, doorChance: 1 });
+    for (const r of d.rooms) {
+      const { doors, windows } = roomOpenings(d, r.id);
+      assert.equal(r.doorCount, doors.length);
+      assert.deepEqual(
+        windows,
+        d.windows.filter((w) => w.room === r.id),
+      );
+    }
+    // Every door and window belongs to some room's list.
+    const all = d.rooms.flatMap((r) => roomOpenings(d, r.id).doors);
+    for (const o of d.doors) assert.ok(all.includes(o));
+  }
+});
+
+test("monster tokens are saved, and maps saved before the Monster tool still open", () => {
+  const d = generateDungeon({ seed: "old-monsters" });
+  d.monsters.push({ x: 3, y: 4, room: 0 });
+  const saved = JSON.parse(JSON.stringify(serializeDungeon(d)));
+  assert.deepEqual(deserializeDungeon(saved).monsters, [
+    { x: 3, y: 4, room: 0 },
+  ]);
+  delete saved.monsters;
+  assert.deepEqual(deserializeDungeon(saved).monsters, []);
 });

@@ -10,6 +10,12 @@ const api: DungeonForgeApi = {
   writeFiles: (files) => ipcRenderer.invoke("write-files", files),
   openFile: (req) => ipcRenderer.invoke("open-file", req),
   showInFolder: (p) => ipcRenderer.invoke("show-in-folder", p),
+  readClipboard: () => ipcRenderer.invoke("clipboard-read"),
+  writeClipboard: (text) => ipcRenderer.invoke("clipboard-write", text),
+  saveSession: (project) => ipcRenderer.invoke("session-save", project),
+  reportError: (info, project) =>
+    ipcRenderer.invoke("report-error", info, project),
+  takeRecovery: () => ipcRenderer.invoke("take-recovery"),
   onMenu: (cb) => {
     ipcRenderer.on("menu", (_e, action: MenuAction) => cb(action));
   },

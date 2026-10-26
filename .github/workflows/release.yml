@@ -1,0 +1,69 @@
+# Builds the installers and publishes them to a draft GitHub Release when a version tag
+# is pushed:
+#
+#   npm version patch        # bumps package.json and creates the tag, e.g. v1.0.1
+#   git push --follow-tags
+#
+# Each platform builds on its own runner, uploads its source maps to Sentry (so crash
+# reports from that build show the TypeScript source), and attaches its installer to the
+# same draft release. Review the draft on GitHub, then publish it.
+#
+# Secrets (repository Settings › Secrets and variables › Actions):
+#   SENTRY_AUTH_TOKEN  a Sentry organization auth token, for the source map upload.
+#                      Required: without it the release fails rather than shipping
+#                      unreadable stack traces.
+# GITHUB_TOKEN is provided by GitHub. Code signing isn't set up yet, so installers are
+# unsigned; see the README for what signing will need.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Check the tag matches the version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The app reports its release as dungeon-forge@<package.json version>, and the
+      # source maps are uploaded under the same name, so the tag has to agree with it.
+      - name: Compare tag and package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match package.json version $version" >&2
+            exit 1
+          fi
+
+  build:
+    name: Build (${{ matrix.os }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test
+      - run: npm run build
+      - name: Upload source maps to Sentry
+        run: npm run sentry:sourcemaps
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      - name: Package and attach to the draft release
+        run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No signing certificates yet: don't go looking for one in the keychain.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"

@@ -6,6 +6,7 @@ import {
   doorSummary,
   DEFAULT_OPTIONS,
   ROOM,
+  roomOpenings,
 } from "./generator.ts";
 import type {
   Dungeon,
@@ -38,6 +39,8 @@ import {
 import type { PropKind } from "./clutter.ts";
 import { GENRES, GENRE_KEYS, getGenre, isGenreKey } from "./genres.ts";
 import { loadPhotoTextures } from "./photo.ts";
+import { decodeMapCode, encodeMapCode, rebuildsFromSeed } from "./mapcode.ts";
+import type { MapProject } from "./mapcode.ts";
 import type { DungeonForgeApi, MenuAction } from "../shared/ipc.ts";
 
 declare global {
@@ -761,11 +764,27 @@ function renderKey(): void {
           ),
         );
     };
-    entry(g.encounterLabel, c.monster);
+    const tokens = dungeon().monsters.filter((m) => m.room === r.id).length;
+    entry(
+      g.encounterLabel,
+      c.monster && (tokens > 0 ? `${c.monster} · ${tokens} on map` : c.monster),
+    );
     entry("Trap", c.trap);
     entry("Special", c.special);
     entry(g.treasureLabel, c.treasure);
-    if (r.doorCount) entry("Doors", String(r.doorCount));
+    const { doors, windows } = roomOpenings(dungeon(), r.id);
+    const locked = doors.filter((o) => o.type === "locked").length;
+    const secret = doors.filter((o) => o.type === "secret").length;
+    const kinds = [
+      locked && `${locked} locked`,
+      secret && `${secret} secret`,
+    ].filter(Boolean);
+    if (doors.length > 0)
+      entry(
+        "Doors",
+        `${doors.length}${kinds.length ? ` (${kinds.join(", ")})` : ""}`,
+      );
+    if (windows.length > 0) entry("Windows", String(windows.length));
     card.addEventListener("click", () => selectRoom(r.id, { center: true }));
     root.append(card);
   }
@@ -960,6 +979,11 @@ function buildEditBar(): void {
     radiusSelect.blur();
     drawView();
   });
+  $("btn-place-monsters").addEventListener("click", (e) => {
+    editor.placeAllMonsters();
+    (e.currentTarget as HTMLElement).blur();
+    if (!state.gmView) toast("Monster tokens show only in the GM view");
+  });
 }
 
 /** Prop choices, the current setting's own props first. Rebuilt when the setting changes. */
@@ -998,6 +1022,7 @@ function syncEditBar(): void {
     propSelect.value = editor.propKind;
   }
   $("edit-radius-field").hidden = editor.tool !== "lighting";
+  $("btn-place-monsters").hidden = editor.tool !== "monster";
   radiusSelect.value = String(editor.lightRadius);
   const tool = TOOLS.find((t) => t.id === editor.tool);
   $("edit-hint").textContent =
@@ -1068,6 +1093,13 @@ function loadProject(text: string): void {
   const project = JSON.parse(text) as Partial<ProjectFile>;
   if (project.app !== "dungeon-forge")
     throw new Error("This file was not saved by Dungeon Forge");
+  applyProject(project);
+}
+
+/** Puts a saved map and its style on screen, replacing the current one. */
+function applyProject(
+  project: Pick<Partial<ProjectFile>, "dungeon"> & { style?: unknown },
+): void {
   const d = deserializeDungeon(project.dungeon);
   state.dungeon = d;
   editor.reset();
@@ -1291,12 +1323,46 @@ const guard = (fn: () => Promise<void>) => (): void => {
   });
 };
 
+/** Copies the map as a code (see mapcode.ts) to paste into a chat or note. */
+async function copyMapCode(): Promise<void> {
+  const d = dungeon();
+  const code = await encodeMapCode(d, state.style);
+  await window.api.writeClipboard(code);
+  const size =
+    code.length < 1000
+      ? `${code.length} characters`
+      : `${(code.length / 1024).toFixed(1)} KB`;
+  toast(
+    rebuildsFromSeed(d)
+      ? `Copied map code (${size}; rebuilds from seed "${d.seed}")`
+      : `Copied map code (${size}, with your edits)`,
+  );
+}
+
+/** Replaces the map with a map code, or .dungeon.json text, from the clipboard. */
+async function pasteMapCode(): Promise<void> {
+  const text = await window.api.readClipboard();
+  let project: MapProject;
+  try {
+    project = await decodeMapCode(text);
+  } catch (err) {
+    toast(`Could not paste map: ${errorMessage(err)}`, true);
+    return;
+  }
+  if (!confirmDiscard()) return;
+  applyProject(project);
+  fitView();
+  toast(`Pasted map "${dungeon().seed}"`);
+}
+
 const actions: Record<MenuAction, () => void> = {
   new: newDungeon,
   blank: blankMap,
   regenerate: () => generate(),
   open: guard(openMap),
   save: guard(saveMap),
+  "copy-code": guard(copyMapCode),
+  "paste-code": guard(pasteMapCode),
   export: openExport,
   "toggle-gm": () => setGmView(!state.gmView),
   "toggle-edit": () => setEditing(!editor.active),
@@ -1430,6 +1496,78 @@ function restoreAfterReload(): boolean {
   }
 }
 if (!restoreAfterReload()) generate({ fit: true });
+
+// ---------------------------------------------------------------------------
+// Crash safety: keep the map on disk as it changes, report errors, and offer the map
+// back after a crash (the main process holds it until the window asks).
+
+const SESSION_EVERY_MS = 2000;
+let savedSession = "";
+setInterval(() => {
+  try {
+    const project = projectJson();
+    if (project === savedSession) return;
+    savedSession = project;
+    void window.api.saveSession(project);
+  } catch {
+    // Mid-change; the next tick catches up.
+  }
+}, SESSION_EVERY_MS);
+
+/** At most one report this often, so an error that repeats doesn't flood the folder. */
+const REPORT_GAP_MS = 5000;
+let lastReport = 0;
+function reportError(
+  kind: "renderer-error" | "unhandled-rejection",
+  err: unknown,
+): void {
+  const now = Date.now();
+  if (now - lastReport < REPORT_GAP_MS) return;
+  lastReport = now;
+  let project: string | undefined;
+  try {
+    project = projectJson();
+  } catch {
+    project = undefined;
+  }
+  const e = err instanceof Error ? err : new Error(String(err));
+  void window.api.reportError(
+    { kind, message: e.message, ...(e.stack ? { stack: e.stack } : {}) },
+    project,
+  );
+  toast(
+    "Something went wrong. Your map was saved, and Help › Report a Problem can send the details.",
+    true,
+  );
+}
+window.addEventListener("error", (e) =>
+  reportError("renderer-error", e.error ?? e.message),
+);
+window.addEventListener("unhandledrejection", (e) =>
+  reportError("unhandled-rejection", e.reason),
+);
+
+void window.api.takeRecovery().then((recovery) => {
+  if (!recovery) return;
+  const when = new Date(recovery.savedAt).toLocaleString();
+  const why =
+    recovery.reason === "renderer-gone"
+      ? "The window crashed"
+      : "Dungeon Forge didn't close properly last time";
+  if (
+    !window.confirm(
+      `${why}. Recover the map you were working on (saved ${when})?`,
+    )
+  )
+    return;
+  try {
+    loadProject(recovery.project);
+    fitView();
+    toast("Recovered your map");
+  } catch (err) {
+    toast(`Could not recover the map: ${errorMessage(err)}`, true);
+  }
+});
 // The Realistic look draws hand-drawn stand-ins until its photographs arrive, then redraws.
 const photosReady = loadPhotoTextures(
   new URL("./assets/textures/", import.meta.url),

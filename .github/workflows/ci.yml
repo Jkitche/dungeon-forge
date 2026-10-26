@@ -1,0 +1,61 @@
+# Checks every push to main and every pull request: types, formatting, tests with
+# coverage, and the build, on Linux, Windows and macOS. Then packages the app once on
+# Linux, to catch packaging problems before a release does.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run format:check
+      - run: npm run test:coverage
+      - run: npm run build
+
+  package:
+    name: Package (Linux)
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # An unpacked build: no installer, no upload, no publishing.
+      - run: npm run dist:dir
+      - name: Check the package holds the app and no source maps
+        run: |
+          npx --no-install asar list release/linux-unpacked/resources/app.asar > files.txt
+          grep -qx "/dist/main/main.js" files.txt
+          grep -qx "/dist/renderer/index.html" files.txt
+          if grep -v "^/node_modules/" files.txt | grep -q "\.map$"; then
+            echo "Source maps were packaged into the app" >&2
+            exit 1
+          fi

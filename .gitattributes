@@ -1,0 +1,6 @@
+# Text files always use LF, on every OS. Windows checkouts would otherwise get CRLF,
+# failing the Prettier check and compiling to JavaScript that no longer matches the
+# source maps uploaded from other platforms.
+* text=auto eol=lf
+*.jpg binary
+*.png binary

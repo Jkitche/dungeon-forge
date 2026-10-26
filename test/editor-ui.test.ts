@@ -111,23 +111,82 @@ test("a fast corridor stroke leaves no gaps; Shift fills a rectangle", () => {
   assert.equal(painted(), 14 + 9, "the 3x3 rectangle");
 });
 
-test("the Erase tool turns squares back into rock", () => {
+test("the Erase tool peels a room back one layer per stroke: room, corridor, rock", () => {
   const h = harness();
   drag(h.editor, [
     [3.5, 3.5],
     [8.5, 6.5],
   ]);
   h.editor.setTool("erase");
-  drag(
-    h.editor,
-    [
-      [3.5, 3.5],
-      [8.5, 6.5],
-    ],
-    true,
+  const sweep = () =>
+    drag(
+      h.editor,
+      [
+        [3.5, 3.5],
+        [8.5, 6.5],
+      ],
+      true,
+    );
+  sweep();
+  assert.equal(h.d.rooms.length, 0, "the room is gone");
+  assert.equal(
+    h.d.cells.filter((t) => t === CORRIDOR).length,
+    24,
+    "its floor is corridor now",
   );
-  assert.equal(h.d.rooms.length, 0);
-  assert.ok(h.d.cells.every((t) => t === ROCK));
+  sweep();
+  assert.ok(
+    h.d.cells.every((t) => t === ROCK),
+    "then rock",
+  );
+  assert.ok(!h.editor.canRedo);
+});
+
+test("erasing a square takes off what stands on it first, and leaves the floor", () => {
+  const h = harness();
+  drag(h.editor, [
+    [3.5, 3.5],
+    [10.5, 9.5],
+  ]);
+  const room = h.d.rooms[0];
+  assert.ok(room?.contents);
+  room.contents.monster = "Skeletons (1d4+1)";
+  h.editor.setTool("clutter");
+  h.editor.propKind = "table";
+  click(h.editor, 5.5, 5.5); // covers (5,5) and (6,5)
+  h.editor.setTool("lighting");
+  click(h.editor, 5.5, 5.5);
+  h.editor.setTool("monster");
+  click(h.editor, 8.5, 8.5);
+  assert.deepEqual(
+    [h.d.props.length, h.d.lights.length, h.d.monsters.length],
+    [1, 1, 1],
+  );
+
+  // One stroke across the table's second square and the token: they go, the floor stays.
+  h.editor.setTool("erase");
+  drag(h.editor, [
+    [6.5, 5.5],
+    [6.5, 8.5],
+    [8.5, 8.5],
+  ]);
+  assert.deepEqual([h.d.props.length, h.d.monsters.length], [0, 0]);
+  assert.equal(h.d.lights.length, 1, "the light was on another square");
+  assert.equal(cell(h.d, 6, 5), ROOM, "still room floor");
+  assert.equal(cell(h.d, 8, 8), ROOM);
+  assert.equal(
+    cell(h.d, 6, 6),
+    CORRIDOR,
+    "an empty square along the stroke goes down one layer",
+  );
+  assert.equal(h.d.rooms.length, 1, "the room is still there");
+
+  // A pillar comes off before the floor under it.
+  h.editor.setTool("pillar");
+  click(h.editor, 9.5, 4.5);
+  h.editor.setTool("erase");
+  click(h.editor, 9.5, 4.5);
+  assert.equal(cell(h.d, 9, 4), ROOM);
 });
 
 test("click tools act straight away: doors, windows, pillars and stairs", () => {
@@ -452,4 +511,44 @@ test("the Lighting tool mounts a torch when clicked close to a wall, and shows w
   );
   click(h.editor, 6.5, 3.15);
   assert.equal(h.d.lights.length, 0, "clicking the torch again takes it down");
+});
+
+test("the Monster tool places and removes tokens, and Place all is one undo step", () => {
+  const h = harness();
+  drag(h.editor, [
+    [3.5, 3.5],
+    [10.5, 9.5],
+  ]);
+  const room = h.d.rooms[0];
+  assert.ok(room?.contents);
+  room.contents.monster = "Skeletons (1d4+1)";
+  h.editor.setTool("monster");
+  click(h.editor, 5.5, 5.5);
+  assert.deepEqual(h.d.monsters, [{ x: 5, y: 5, room: 0 }]);
+  click(h.editor, 5.5, 5.5);
+  assert.deepEqual(h.d.monsters, [], "clicking a token removes it");
+  click(h.editor, 20.5, 15.5);
+  assert.deepEqual(h.d.monsters, [], "not on rock");
+
+  h.editor.placeAllMonsters();
+  assert.equal(h.d.monsters.length, 4, "1d4+1 averages 4");
+  h.editor.undo();
+  assert.equal(h.d.monsters.length, 0, "one undo takes them all back");
+
+  const overlay = (fx: number, fy: number) => {
+    h.editor.pointerMove(at(fx, fy));
+    const rec = recordingContext();
+    h.editor.drawOverlay(rec.ctx, 40);
+    return rec;
+  };
+  assert.ok(
+    overlay(5.5, 5.5).styles.includes("rgba(212, 162, 76, 0.95)"),
+    "a ring where it would go",
+  );
+  assert.ok(
+    overlay(20.5, 15.5).styles.some((s) =>
+      String(s).startsWith("rgba(220, 70, 60"),
+    ),
+    "red where it can't",
+  );
 });

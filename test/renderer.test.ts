@@ -319,6 +319,36 @@ test("wall torches are drawn small, on their wall; free-standing lights draw not
   );
 });
 
+test("monster tokens are lettered and numbered, and only the GM sees them", () => {
+  const d = createBlankDungeon({ seed: "tokens-draw", width: 16, height: 10 });
+  paintRoom(
+    d,
+    { x: 2, y: 2 },
+    { x: 8, y: 6 },
+    {
+      name: "Hall",
+      kind: "monster",
+      atmosphere: "",
+      feature: "a bare floor",
+      monster: "Goblin scouts (1d6+2)",
+      trap: null,
+      special: null,
+      treasure: null,
+      note: null,
+    },
+  );
+  d.monsters.push({ x: 3, y: 3, room: 0 });
+  assert.ok(
+    drawnText(render(d, { ppg: 20 }).rec).includes("G"),
+    "one token: just the letter",
+  );
+  d.monsters.push({ x: 5, y: 3, room: 0 });
+  const gm = drawnText(render(d, { ppg: 20 }).rec);
+  assert.ok(gm.includes("G1") && gm.includes("G2"), "several: numbered");
+  const player = drawnText(render(d, { ppg: 20, gmView: false }).rec);
+  assert.ok(!player.some((t) => /^G\d?$/.test(t)), "hidden from players");
+});
+
 test("frozen rooms wash blue and scorching rooms red, only when turned on", () => {
   const d = createBlankDungeon({ seed: "tint", width: 24, height: 12 });
   const room = (atmosphere: string) => ({

@@ -3,3 +3,10 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
+release/
+
+# Secrets: the Sentry auth token and anything like it never goes in the repo.
+.env
+.env.*
+.sentryclirc
+sentry.properties

@@ -116,6 +116,40 @@ export function assertConsistent(d: Dungeon, label: string): void {
     assert.equal(l.room, d.roomIds[c], `${label}: light knows its room`);
     lightSquares.add(c);
   }
+  const tokenSquares = new Set<number>();
+  for (const m of d.monsters) {
+    const c = m.y * d.width + m.x;
+    assert.ok(isFloor(d.cells[c] as number), `${label}: monsters on floor`);
+    assert.ok(!tokenSquares.has(c), `${label}: one monster per square`);
+    assert.equal(m.room, d.roomIds[c], `${label}: monster knows its room`);
+    assert.ok(
+      d.rooms[m.room]?.contents?.monster,
+      `${label}: only in rooms with monsters`,
+    );
+    tokenSquares.add(c);
+  }
+  for (const r of d.rooms) {
+    const doors = d.doors.filter((o) => {
+      const cells =
+        o.y1 === o.y2
+          ? [
+              [o.x1, o.y1 - 1],
+              [o.x1, o.y1],
+            ]
+          : [
+              [o.x1 - 1, o.y1],
+              [o.x1, o.y1],
+            ];
+      return cells.some(
+        ([x, y]) => d.roomIds[(y as number) * d.width + (x as number)] === r.id,
+      );
+    });
+    assert.equal(
+      r.doorCount,
+      doors.length,
+      `${label}: room ${r.id + 1} counts every door into it`,
+    );
+  }
 }
 
 export const unitLength = (

@@ -34,6 +34,7 @@ import type { DepthLevel } from "./depth.ts";
 import { fillPhoto, photoTexture, PHOTO_SQUARES } from "./photo.ts";
 import { lightOccluders } from "./raycast.ts";
 import { drawEnvironments } from "./effects.ts";
+import { monsterInitial } from "./monsters.ts";
 
 type RGB = readonly [number, number, number];
 
@@ -550,6 +551,7 @@ export function renderDungeon(
   drawTorches(p);
   runDecor("afterWalls");
   drawDoors(p);
+  if (p.gm) drawMonsters(p);
   if (p.gm && (opts.showLabels ?? true)) drawLabels(p);
   return canvas;
 }
@@ -1486,6 +1488,45 @@ function drawTorches({ ctx, d, ppg, theme }: Paint): void {
     }
     ctx.restore();
   }
+}
+
+/**
+ * Monster tokens: a red disc with the monster's letter, numbered when a room has several
+ * (G1, G2...), so the GM can track each one. Same look on every theme, so they always stand out.
+ */
+function drawMonsters({ ctx, d, ppg }: Paint): void {
+  const counts = new Map<number, number>();
+  for (const m of d.monsters) counts.set(m.room, (counts.get(m.room) ?? 0) + 1);
+  const seen = new Map<number, number>();
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const m of d.monsters) {
+    const monster = d.rooms[m.room]?.contents?.monster;
+    if (!monster) continue;
+    const n = (seen.get(m.room) ?? 0) + 1;
+    seen.set(m.room, n);
+    const label =
+      (counts.get(m.room) ?? 1) > 1
+        ? `${monsterInitial(monster)}${n}`
+        : monsterInitial(monster);
+    const x = (m.x + 0.5) * ppg;
+    const y = (m.y + 0.5) * ppg;
+    ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+    ctx.shadowBlur = ppg * 0.12;
+    ctx.fillStyle = "#9b1c1c";
+    ctx.beginPath();
+    ctx.arc(x, y, ppg * 0.36, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowColor = "rgba(0, 0, 0, 0)";
+    ctx.lineWidth = Math.max(1, ppg * 0.05);
+    ctx.strokeStyle = "#f4e3c1";
+    ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold ${Math.round(ppg * (label.length > 2 ? 0.28 : 0.36))}px system-ui, sans-serif`;
+    ctx.fillText(label, x, y + ppg * 0.02);
+  }
+  ctx.restore();
 }
 
 function drawDoors(p: Paint): void {

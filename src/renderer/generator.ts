@@ -72,6 +72,7 @@ export interface Room {
   entrance: boolean;
   exit: boolean;
   contents: RoomContents | null;
+  /** Doors into the room from any side, including ones shared with another room. */
   doorCount: number;
   /** Ice, heat, water... implied by the room's description; drawn on the map. */
   environment: Environment | null;
@@ -119,6 +120,37 @@ export interface MapLight {
   wall?: number;
 }
 
+/** A token for one of room `room`'s monsters, on square (x, y). */
+export interface MonsterToken {
+  x: number;
+  y: number;
+  room: number;
+}
+
+export interface RoomOpenings {
+  doors: Door[];
+  windows: MapWindow[];
+}
+
+/**
+ * The doors into a room and the windows in its walls. A door between two rooms belongs to
+ * both, so it's counted from either side rather than by the one room it's filed under.
+ */
+export function roomOpenings(d: Dungeon, id: number): RoomOpenings {
+  const inRoom = (x: number, y: number): boolean =>
+    x >= 0 &&
+    y >= 0 &&
+    x < d.width &&
+    y < d.height &&
+    d.roomIds[y * d.width + x] === id;
+  const doors = d.doors.filter((o) =>
+    o.y1 === o.y2
+      ? inRoom(o.x1, o.y1 - 1) || inRoom(o.x1, o.y1)
+      : inRoom(o.x1 - 1, o.y1) || inRoom(o.x1, o.y1),
+  );
+  return { doors, windows: d.windows.filter((w) => w.room === id) };
+}
+
 /** How far a wall torch's flame sits from the middle of its square, toward the wall. */
 export const TORCH_OFFSET = 0.3;
 
@@ -148,6 +180,8 @@ export interface Dungeon {
   props: Prop[];
   /** Light sources placed by hand with the Lighting tool. */
   lights: MapLight[];
+  /** Tokens for rooms' monsters, placed with the Monster tool. */
+  monsters: MonsterToken[];
   /** Set once the map has been hand-edited; the seed no longer reproduces it. */
   edited?: boolean;
 }
@@ -237,6 +271,7 @@ export function generateDungeon(input: Partial<DungeonOptions> = {}): Dungeon {
     stairs: [],
     props: [],
     lights: [],
+    monsters: [],
   };
   // Per-cell noise makes winding corridors and cave tunnels wander deterministically.
   const noise = new Float32Array(W * H);
@@ -260,7 +295,7 @@ export function generateDungeon(input: Partial<DungeonOptions> = {}): Dungeon {
       isEntrance: room.entrance,
       isExit: room.exit,
     });
-    room.doorCount = d.doors.filter((door) => door.room === room.id).length;
+    room.doorCount = roomOpenings(d, room.id).doors.length;
     room.environment = detectEnvironment(room.contents);
   }
   // After stocking, because room names steer the choice of props.
@@ -1081,6 +1116,8 @@ export function deserializeDungeon(obj: unknown): Dungeon {
     props: full.props ?? [],
     // Maps saved before the Lighting tool have no placed lights.
     lights: full.lights ?? [],
+    // Maps saved before the Monster tool have no tokens.
+    monsters: full.monsters ?? [],
     cells: Uint8Array.from(full.cells, (ch) => Number(ch)),
     roomIds: Int16Array.from(full.roomIds),
   };

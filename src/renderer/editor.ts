@@ -13,6 +13,7 @@ import {
   inRoomShape,
   isFloor,
   normalizeOptions,
+  roomOpenings,
 } from "./generator.ts";
 import type {
   Door,
@@ -20,6 +21,7 @@ import type {
   Dungeon,
   DungeonOptions,
   MapLight,
+  MonsterToken,
   MapWindow,
   Room,
   Stair,
@@ -36,6 +38,7 @@ import {
   propAt,
 } from "./clutter.ts";
 import type { Prop, PropKind } from "./clutter.ts";
+import { monsterCount } from "./monsters.ts";
 
 export interface Cell {
   x: number;
@@ -77,6 +80,7 @@ export function createBlankDungeon(
     stairs: [],
     props: [],
     lights: [],
+    monsters: [],
     edited: true,
   };
 }
@@ -176,18 +180,53 @@ export function paintCorridor(d: Dungeon, cells: Cell[]): boolean {
   return changed && commit(d);
 }
 
-/** Turns squares back into solid rock. */
+/**
+ * Erases one layer from each square, top first, so a stroke never wipes out everything
+ * on a square at once:
+ * 1. anything standing on it: clutter, lights and torches, monster tokens, stairs;
+ * 2. a pillar, leaving the floor it stood on;
+ * 3. room floor, which becomes corridor;
+ * 4. corridor, which becomes rock.
+ * Each square loses one layer however many times the stroke crosses it.
+ */
 export function eraseCells(d: Dungeon, cells: Cell[]): boolean {
   let changed = false;
+  const seen = new Set<number>();
   for (const c of cells) {
     if (!isEditable(d, c.x, c.y)) continue;
     const i = idx(d, c.x, c.y);
-    if (d.cells[i] === ROCK) continue;
-    d.cells[i] = ROCK;
-    d.roomIds[i] = -1;
+    if (seen.has(i)) continue;
+    seen.add(i);
+    if (clearObjects(d, c)) {
+      changed = true;
+      continue;
+    }
+    const t = d.cells[i];
+    if (t === PILLAR)
+      d.cells[i] = (d.roomIds[i] as number) >= 0 ? ROOM : CORRIDOR;
+    else if (t === ROOM) {
+      d.cells[i] = CORRIDOR;
+      d.roomIds[i] = -1;
+    } else if (t === CORRIDOR) d.cells[i] = ROCK;
+    else continue;
     changed = true;
   }
   return changed && commit(d);
+}
+
+/** Removes everything standing on a square: props covering it, lights, tokens and stairs. */
+function clearObjects(d: Dungeon, c: Cell): boolean {
+  const on = (p: Cell): boolean => p.x === c.x && p.y === c.y;
+  const before =
+    d.props.length + d.lights.length + d.monsters.length + d.stairs.length;
+  d.props = d.props.filter((p) => !footprint(p).some(on));
+  d.lights = d.lights.filter((l) => !on(l));
+  d.monsters = d.monsters.filter((m) => !on(m));
+  d.stairs = d.stairs.filter((st) => !on(st));
+  return (
+    d.props.length + d.lights.length + d.monsters.length + d.stairs.length <
+    before
+  );
 }
 
 /** Adds a pillar to a floor square, or removes one. Pillars keep their room. */
@@ -423,6 +462,72 @@ export function setLightRadius(d: Dungeon, c: Cell, radius: number): boolean {
   return commit(d);
 }
 
+/** Index of the monster token on a square, or -1. */
+export const monsterAt = (d: Dungeon, c: Cell): number =>
+  d.monsters.findIndex((m) => m.x === c.x && m.y === c.y);
+
+/** True when a token can go here: a free floor square in a room that has monsters. */
+export function canHaveMonster(d: Dungeon, c: Cell): boolean {
+  if (!isEditable(d, c.x, c.y) || !isFloor(d.cells[idx(d, c.x, c.y)] as number))
+    return false;
+  const room = d.roomIds[idx(d, c.x, c.y)] as number;
+  return Boolean(d.rooms[room]?.contents?.monster) && monsterAt(d, c) < 0;
+}
+
+/** Places a token for the monsters of the room under it. */
+export function placeMonster(d: Dungeon, c: Cell): boolean {
+  if (!canHaveMonster(d, c)) return false;
+  d.monsters.push({
+    x: c.x,
+    y: c.y,
+    room: d.roomIds[idx(d, c.x, c.y)] as number,
+  });
+  return commit(d);
+}
+
+/** Removes the token on a square. */
+export function removeMonster(d: Dungeon, c: Cell): boolean {
+  const i = monsterAt(d, c);
+  if (i < 0) return false;
+  d.monsters.splice(i, 1);
+  return commit(d);
+}
+
+/**
+ * Puts down every room's monsters: as many tokens as its dice average (see monsterCount),
+ * on random free squares, keeping clear of stairs, props and the room number. Rooms that
+ * already have tokens are left alone. Uses its own random stream, so the same map always
+ * places the same way.
+ */
+export function placeAllMonsters(d: Dungeon): boolean {
+  const rng = new RNG(`${d.seed}:monsters`);
+  const blocked = new Set<number>();
+  for (const s of d.stairs) blocked.add(idx(d, s.x, s.y));
+  for (const p of d.props)
+    for (const f of footprint(p)) blocked.add(idx(d, f.x, f.y));
+  let placed = false;
+  for (const r of d.rooms) {
+    const monster = r.contents?.monster;
+    if (!monster || d.monsters.some((m) => m.room === r.id)) continue;
+    const squares: Cell[] = [];
+    for (let c = 0; c < d.cells.length; c++) {
+      const cell = { x: c % d.width, y: Math.floor(c / d.width) };
+      if (
+        d.roomIds[c] !== r.id ||
+        blocked.has(c) ||
+        (cell.x === r.cx && cell.y === r.cy)
+      )
+        continue;
+      if (canHaveMonster(d, cell)) squares.push(cell);
+    }
+    for (const cell of rng.shuffle(squares).slice(0, monsterCount(monster))) {
+      d.monsters.push({ ...cell, room: r.id });
+      placed = true;
+    }
+  }
+  return placed ? commit(d) : false;
+}
+
 /** Wipes the map back to solid rock. */
 export function clearMap(d: Dungeon): boolean {
   if (d.rooms.length === 0 && d.cells.every((t) => t === ROCK)) return false;
@@ -434,6 +539,7 @@ export function clearMap(d: Dungeon): boolean {
   d.stairs = [];
   d.props = [];
   d.lights = [];
+  d.monsters = [];
   return commit(d);
 }
 
@@ -590,6 +696,19 @@ export function normalizeDungeon(d: Dungeon): void {
     return true;
   });
 
+  // Monster tokens: on floor, one per square, in a room that has monsters.
+  const seenMonsters = new Set<number>();
+  d.monsters = d.monsters.filter((m) => {
+    const c = inside(d, m) ? idx(d, m.x, m.y) : -1;
+    if (c < 0 || seenMonsters.has(c) || !isFloor(cells[c] as number))
+      return false;
+    const room = roomIds[c] as number;
+    if (!d.rooms[room]?.contents?.monster) return false;
+    seenMonsters.add(c);
+    m.room = room;
+    return true;
+  });
+
   // Stairs: only on floor, one per square.
   const seenStairs = new Set<number>();
   d.stairs = d.stairs.filter((s: Stair) => {
@@ -603,7 +722,7 @@ export function normalizeDungeon(d: Dungeon): void {
   for (const r of d.rooms) {
     r.entrance = d.stairs.some((s) => s.room === r.id && s.kind === "up");
     r.exit = d.stairs.some((s) => s.room === r.id && s.kind === "down");
-    r.doorCount = d.doors.filter((o) => o.room === r.id).length;
+    r.doorCount = roomOpenings(d, r.id).doors.length;
   }
 }
 
@@ -632,6 +751,7 @@ export interface Snapshot {
   stairs: Stair[];
   props: Prop[];
   lights: MapLight[];
+  monsters: MonsterToken[];
   edited: boolean;
 }
 
@@ -645,6 +765,7 @@ export function snapshot(d: Dungeon): Snapshot {
     stairs: structuredClone(d.stairs),
     props: structuredClone(d.props),
     lights: structuredClone(d.lights),
+    monsters: structuredClone(d.monsters),
     edited: d.edited ?? false,
   };
 }
@@ -658,5 +779,6 @@ export function restore(d: Dungeon, s: Snapshot): void {
   d.stairs = structuredClone(s.stairs);
   d.props = structuredClone(s.props);
   d.lights = structuredClone(s.lights);
+  d.monsters = structuredClone(s.monsters);
   d.edited = s.edited;
 }

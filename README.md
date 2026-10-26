@@ -1,5 +1,7 @@
 # Dungeon Forge
 
+[![CI](https://github.com/Jkitche/dungeon-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/Jkitche/dungeon-forge/actions/workflows/ci.yml)
+
 A desktop app (Electron) that generates random D&D dungeon maps and exports them to Roll20, Foundry VTT, Universal VTT (`.dd2vtt`) and plain images.
 
 ## Run
@@ -11,6 +13,9 @@ npm start          # compiles TypeScript to dist/ and launches Electron
 
 Other scripts:
 
+- `npm run dist` builds, uploads the source maps to Sentry, and packages installers into `release/` with [electron-builder](https://www.electron.build): an AppImage on Linux, an NSIS installer on Windows and a dmg on macOS (each built on its own OS). It needs a Sentry organization auth token in `SENTRY_AUTH_TOKEN` (create one in Sentry under Settings › Auth Tokens and never commit it), and fails without one, so a release can't ship with unreadable stack traces.
+- `npm run dist:dir` packages an unpacked build into `release/` for local testing, without uploading anything.
+- `npm run sentry:sourcemaps` uploads the source maps of the current `dist/` for this version's release.
 - `npm run dev` builds, launches the app and rebuilds on every save under `src/`. Renderer changes (code, styles, HTML, textures) reload the window in a fraction of a second and keep the map you're working on, its style, the view and edit mode. Main process and preload changes restart the app. Type errors are printed but don't stop the app. Extra Electron flags go after `--`, e.g. `npm run dev -- --remote-debugging-port=9222`.
 - `npm run build` compiles to `dist/` without launching the app.
 - `npm run typecheck` runs strict type checking over the source, tests and build script.
@@ -19,6 +24,22 @@ Other scripts:
 - `npm run test:coverage` runs them with coverage, and fails if line or function coverage drops below 98% or branch coverage below 93%.
 
 The project is written entirely in TypeScript (strict mode, TypeScript 7), and Node 22.18 or newer is required.
+
+## Continuous integration and releases
+
+GitHub Actions runs two workflows:
+
+- **CI** (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request. On Linux, Windows and macOS it typechecks, checks formatting, runs the tests with coverage and builds; then it packages the app on Linux and checks the package holds the app and no source maps.
+- **Release** (`.github/workflows/release.yml`) runs when a version tag is pushed. It checks the tag matches `package.json`, then on each OS runs the tests, builds, uploads source maps to Sentry and attaches the installer (AppImage, Windows NSIS installer, Intel and Apple Silicon dmgs) to a **draft** GitHub Release, which you review and publish.
+
+To release:
+
+```sh
+npm version patch        # or minor / major: bumps package.json and creates the tag
+git push --follow-tags
+```
+
+The release workflow needs one repository secret, `SENTRY_AUTH_TOKEN` (Settings › Secrets and variables › Actions): a Sentry organization auth token for the source map upload. Without it the release fails rather than shipping unreadable stack traces. Installers aren't code-signed yet, so Windows shows an "unknown publisher" warning and macOS needs right-click › Open the first time; signing will need a Windows certificate (`CSC_LINK`, `CSC_KEY_PASSWORD`) and an Apple Developer ID with notarization credentials, all added as secrets too.
 
 ## Features
 
@@ -37,13 +58,17 @@ The project is written entirely in TypeScript (strict mode, TypeScript 7), and N
 - **Two layouts.** _Rooms & corridors_ gives rectangular, round and octagonal rooms, pillared halls, and straight or winding corridors with optional loops. _Caverns_ gives organic caves built by cellular automata, with every pocket tunnelled together.
 - **Doors.** Normal, locked and secret doors are placed only on 1-square entrances.
 - **Stairs.** The entrance and the exit are placed as far apart as the layout allows. Rooms are numbered by walking distance from the entrance.
-- **Room key.** Every room is stocked with a name, atmosphere, feature and contents (monster, trap, special or empty, plus treasure). Click a room on the map or in the key to highlight it.
+- **Room key.** Every room is stocked with a name, atmosphere, feature and contents (monster, trap, special or empty, plus treasure). Click a room on the map or in the key to highlight it. Each entry also lists the room's doors (with how many are locked or secret, counting doors shared with a neighbouring room) and windows, kept up to date as you edit.
 - **Seeds.** Each seed always produces the same dungeon, so you can share a seed or tweak the sliders without losing the layout.
 - **Room conditions.** Rooms whose name or atmosphere implies a condition are tagged with it in the room key: **Lava**, **Burning**, **Iced over**, **Frozen**, **Scorching**, **Webbed**, **Crystalline**, **Overgrown**, **Toxic**, **Flooded** or **Smoky**. With **Room cold and heat** on (Style section), **Frozen** rooms are washed blue and **Scorching** rooms red, and the colour bleeds out through their doorways and fades along the corridor. Closed doors let less through than open archways, and secret doors let nothing through, so they stay secret. Features and traps don't count, so an unsprung freezing-gas trap gives nothing away.
 - **Depth.** The **Depth** switch (Off, Subtle, Strong) makes maps read as 3D while staying top-down for VTTs. It adds raised walls with a lit and a shaded edge, shadows that fall away from a top-left light, darker floor where it meets walls, and highlights on pillars and furniture. Tall props like shelves and statues cast longer shadows, and rugs cast none. Nothing moves, so walls and doors still match VTT line of sight. **Light sources** dims the floor and lights pools around braziers, consoles and cryo pods. Light is ray cast, so walls, closed doors and pillars cast shadows with soft edges, and light never leaks into the next room. Clutter blocks light by its cover, as in D&D: shelves give full cover and block it completely, statues and cryo pods give three-quarters cover (a quarter of the light gets past), crates, barrels, chests, coffins, consoles and rubble give half cover, and tables, beds, rugs, bones and braziers give none. Maps with no light sources are left as they are.
 - **Look.** The art follows the setting. The **Look** switch in the Style section can swap any setting's art for **Blueprint** (old-school blue, good for print), **Dark Stone** (flagstones and shadows, good for VTTs) or **Realistic** (photographic rock and cobblestones). Realistic uses CC0 textures from [ambientCG](https://ambientcg.com); see `src/renderer/assets/textures/README.md`.
 - **GM and player views.** The player view hides room numbers and draws secret doors as plain wall.
 - **Save and open.** Maps save as `.dungeon.json` files.
+- **Map codes.** **File › Copy Map Code** (Ctrl+Shift+C) copies the current map as a line of text to paste into a chat or note, and **File › Paste Map Code** (Ctrl+Shift+V) opens one from the clipboard. An unedited map's code is a few hundred characters, since its seed and settings rebuild it exactly; a hand-edited map's code carries everything (edits, clutter, lights, monster tokens, style), compressed to a few KB. Paste also accepts the text of a `.dungeon.json` file, and line breaks in a pasted code don't matter. Seed-only codes rebuild with the generator of the version that opens them, so share a hand-edited code (or a saved file) when the map must match exactly across versions.
+- **Crash recovery.** As you work, the current map is kept in a session file in the app's data folder; quitting normally deletes it. If the app crashes, is killed or loses power, the next launch offers the map back. If only the window crashes, reloading it brings the map back straight away.
+- **Problem reports.** Errors and crashes write a report to the `crash-reports` folder in the app's data folder (the newest 20 are kept): what happened, the stack trace, the app, Electron and OS versions, and the map at the time. Nothing is sent automatically. **Help › Report a Problem…** opens a GitHub issue filled in with the newest report's details (with the user's home folder replaced by `~`, and without the map) to review and submit, and **Help › Open Crash Reports Folder** shows the report files to attach.
+- **Automatic crash reports.** With the user's consent, crashes and errors are also sent to the developer through [Sentry](https://sentry.io). The first launch asks once, and **Help › Send Crash Reports Automatically** changes the answer. Until the user agrees, Sentry doesn't run at all. Reports cover errors in the main process and the window, and native crashes of either (sent on the next launch). They hold the error, the app and system versions, and the map's setting, size and room count; never the map itself, the machine name or user details, and the home folder is replaced by `~` in every path. Reports go to the `dungeon-forge` project in the `jkitcheio` Sentry organization, whose DSN is in `src/main/telemetry.ts` (a DSN only allows sending events, so it's safe to ship). The `DUNGEON_FORGE_SENTRY_DSN` environment variable overrides it, e.g. to test against another project, and setting it to an empty string turns reports off. Packaged builds report as `production`, everything else as `development`, and every report carries the release `dungeon-forge@<version>`.
 
 ## Clutter
 
@@ -59,13 +84,14 @@ Click **Edit map** (Ctrl+Shift+E) to edit the current map and choose a tool from
 | -------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Room     | R   | Drag a rectangle. Drawing over another room takes those squares.                                                                                                                                                                                                                                                                                                                                                   |
 | Corridor | C   | Drag to paint corridor through rock; hold Shift for a rectangle.                                                                                                                                                                                                                                                                                                                                                   |
-| Erase    | E   | Drag to turn squares back into rock; hold Shift for a rectangle.                                                                                                                                                                                                                                                                                                                                                   |
+| Erase    | E   | Drag to erase one layer at a time: first anything on a square (clutter, lights and torches, monster tokens, stairs), then a pillar, then room floor becomes corridor, then corridor becomes rock. Each square loses one layer per stroke. Hold Shift for a rectangle.                                                                                                                                              |
 | Door     | D   | Click an edge between two floor squares: door, then locked, then secret, then none.                                                                                                                                                                                                                                                                                                                                |
 | Window   | W   | Click a wall between floor and rock to add or remove a window.                                                                                                                                                                                                                                                                                                                                                     |
 | Pillar   | P   | Click a floor square to add or remove a pillar.                                                                                                                                                                                                                                                                                                                                                                    |
 | Clutter  | F   | Pick a prop from the **Prop** list (the setting's own props come first), then click floor to place it. Click a prop to remove it, Shift-click to turn it.                                                                                                                                                                                                                                                          |
 | Stairs   | S   | Click a floor square: stairs up, then down, then none.                                                                                                                                                                                                                                                                                                                                                             |
 | Lighting | L   | Pick a reach from the **Radius** list (5 ft candle to 60 ft), then click floor to place a light, or click close to a wall that faces rock to mount a torch on it (drawn as a small flame on an iron bracket, shining from the wall). Click a light to remove it, Shift-click to give it the chosen radius. While the tool is selected, each light's reach is outlined. Placing a light turns on **Light sources**. |
+| Monster  | M   | Click floor in a room that has monsters to place one of its tokens: a red disc with the monster's letter, numbered when there are several (G1, G2...). Click a token to remove it. **Place all** puts down every room's monsters, as many as the room's dice average (1d6+2 gives 6). Tokens show only in the GM view, so player exports never give them away, and the room key shows how many are on the map.     |
 
 Undo with Ctrl+Z and redo with Ctrl+Shift+Z. In edit mode, right-drag or hold Space to pan. New rooms are stocked from the current setting's tables and appear in the room key straight away. Walls are worked out from the floor, so every export works on hand-drawn maps too. Once a map has been edited, the seed no longer reproduces it, so the app asks before anything would regenerate over your work. Save it with **Save** to keep it.
 

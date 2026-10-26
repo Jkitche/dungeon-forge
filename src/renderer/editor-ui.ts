@@ -23,6 +23,11 @@ import {
   togglePillar,
   lightAt,
   lightSpotAt,
+  canHaveMonster,
+  monsterAt,
+  placeAllMonsters,
+  placeMonster,
+  removeMonster,
   placeLight,
   removeLight,
   setLightRadius,
@@ -43,7 +48,8 @@ export type ToolId =
   | "pillar"
   | "stairs"
   | "clutter"
-  | "lighting";
+  | "lighting"
+  | "monster";
 
 export interface Tool {
   id: ToolId;
@@ -69,7 +75,7 @@ export const TOOLS: readonly Tool[] = [
     id: "erase",
     label: "Erase",
     key: "e",
-    hint: "Drag to turn squares back into rock. Hold Shift to erase a rectangle.",
+    hint: "Drag to erase one layer at a time: first anything on a square (clutter, lights, monsters, stairs), then a pillar, then room floor becomes corridor, then corridor becomes rock. Hold Shift to erase a rectangle.",
   },
   {
     id: "door",
@@ -106,6 +112,12 @@ export const TOOLS: readonly Tool[] = [
     label: "Lighting",
     key: "l",
     hint: "Click floor to place a light of the chosen radius, or click close to a wall to mount a torch on it. Click a light to remove it, Shift-click to give it the chosen radius.",
+  },
+  {
+    id: "monster",
+    label: "Monster",
+    key: "m",
+    hint: "Click floor in a room with monsters to place one of its monster tokens, click a token to remove it. Place all puts down every room's monsters. Tokens show only in the GM view.",
   },
 ];
 
@@ -167,6 +179,11 @@ export class MapEditor {
 
   get dragging(): boolean {
     return this.drag !== null;
+  }
+
+  /** Puts down every room's monsters (see placeAllMonsters), as one undo step. */
+  placeAllMonsters(): void {
+    this.apply(placeAllMonsters);
   }
 
   /** Forget history, e.g. after a new map replaces the one being edited. */
@@ -244,6 +261,11 @@ export class MapEditor {
         else this.apply((d) => placeProp(d, cell, this.propKind));
         return;
       }
+      case "monster":
+        if (monsterAt(this.host.dungeon(), cell) >= 0)
+          this.apply((d) => removeMonster(d, cell));
+        else this.apply((d) => placeMonster(d, cell));
+        return;
       case "lighting": {
         const spot = lightSpotAt(this.host.dungeon(), fx, fy);
         const onLight = lightAt(this.host.dungeon(), spot) >= 0;
@@ -370,7 +392,15 @@ export class MapEditor {
         const y = Math.floor(fy);
         const prop =
           this.tool === "clutter" ? d.props[propAt(d, x, y)] : undefined;
-        if (this.tool === "lighting") {
+        if (this.tool === "monster") {
+          // A token the click would remove, a square it would fill, or red where none can go.
+          const ok = monsterAt(d, { x, y }) >= 0 || canHaveMonster(d, { x, y });
+          ctx.strokeStyle = ok ? ACCENT : "rgba(220, 70, 60, 0.8)";
+          ctx.lineWidth = lw;
+          ctx.beginPath();
+          ctx.arc((x + 0.5) * ppg, (y + 0.5) * ppg, ppg * 0.4, 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (this.tool === "lighting") {
           // The light a click would remove or change, or where a new one would go and how far it reaches.
           const spot = lightSpotAt(d, fx, fy);
           const on = lightAt(d, spot) >= 0;

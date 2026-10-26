@@ -13,7 +13,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node --test \"test/**/*.test.ts\"",
-    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-lines=98 --test-coverage-branches=93 --test-coverage-functions=98 \"test/**/*.test.ts\""
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-lines=98 --test-coverage-branches=93 --test-coverage-functions=98 \"test/**/*.test.ts\"",
+    "sentry:sourcemaps": "node scripts/sourcemaps.ts",
+    "dist": "npm run build && npm run sentry:sourcemaps && electron-builder",
+    "dist:dir": "npm run build && electron-builder --dir"
   },
   "keywords": [
     "dnd",
@@ -24,11 +27,61 @@
     "vtt",
     "electron"
   ],
+  "author": "Jae Kitchens",
   "license": "MIT",
   "devDependencies": {
+    "@sentry/cli": "3.8.2",
     "@types/node": "^26.6.5",
     "electron": "^45.0.0",
+    "electron-builder": "26.18.0",
     "prettier": "3.9.10",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@sentry/electron": "8.3.0"
+  },
+  "build": {
+    "appId": "io.github.jkitche.dungeonforge",
+    "productName": "Dungeon Forge",
+    "files": [
+      "dist/**/*",
+      "!dist/**/*.map",
+      "!dist/.reload",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.role-playing-games"
+    },
+    "publish": {
+      "provider": "github",
+      "releaseType": "draft"
+    }
+  },
+  "allowScripts": {
+    "@sentry/cli": false,
+    "electron-winstaller": false
   }
 }
